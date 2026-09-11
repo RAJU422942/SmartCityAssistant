@@ -1,0 +1,66 @@
+[
+  {
+    "id": "s1",
+    "code": "PNBE",
+    "name": "Patna Junction",
+    "city": "Patna",
+    "latitude": 25.6022,
+    "longitude": 85.1376
+  },
+  {
+    "id": "s2",
+    "code": "NDLS",
+    "name": "New Delhi",
+    "city": "New Delhi",
+    "latitude": 28.6429,
+    "longitude": 77.2197
+  },
+  {
+    "id": "s3",
+    "code": "BSB",
+    "name": "Varanasi Junction",
+    "city": "Varanasi",
+    "latitude": 25.3216,
+    "longitude": 82.9873
+  },
+  {
+    "id": "s4",
+    "code": "DNR",
+    "name": "Danapur",
+    "city": "Patna",
+    "latitude": 25.6333,
+    "longitude": 85.0333
+  },
+  {
+    "id": "s5",
+    "code": "GAYA",
+    "name": "Gaya Junction",
+    "city": "Gaya",
+    "latitude": 24.7914,
+    "longitude": 85.0002
+  },
+  {
+    "id": "s6",
+    "code": "MFP",
+    "name": "Muzaffarpur Junction",
+    "city": "Muzaffarpur",
+    "latitude": 26.1209,
+    "longitude": 85.3910
+  },
+  {
+    "id": "s7",
+    "code": "HWH",
+    "name": "Howrah Junction",
+    "city": "Kolkata",
+    "latitude": 22.5833,
+    "longitude": 88.3417
+  },
+  {
+    "id": "s8",
+    "code": "BCT",
+    "name": "Mumbai Central",
+    "city": "Mumbai",
+    "latitude": 18.9690,
+    "longitude": 72.8218
+  }
+]

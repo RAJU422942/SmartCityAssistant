@@ -1,0 +1,47 @@
+[
+  {
+    "number": "12393",
+    "name": "Sampoorna Kranti Express",
+    "from": "Patna Junction (PNBE)",
+    "to": "New Delhi (NDLS)",
+    "departure": "05:15 PM",
+    "arrival": "06:55 AM",
+    "duration": "13h 40m",
+    "runningDays": "Daily",
+    "classes": ["1A", "2A", "3A", "SL"],
+    "status": "On Time",
+    "dataSource": "DEMO",
+    "availability": "Available (3A: AVL 42)",
+    "fare": "₹640 - ₹2150"
+  },
+  {
+    "number": "12309",
+    "name": "Rajdhani Express",
+    "from": "Patna Junction (PNBE)",
+    "to": "New Delhi (NDLS)",
+    "departure": "07:10 PM",
+    "arrival": "05:20 AM",
+    "duration": "10h 10m",
+    "runningDays": "Daily",
+    "classes": ["1A", "2A", "3A"],
+    "status": "On Time",
+    "dataSource": "DEMO",
+    "availability": "Available (2A: AVL 12)",
+    "fare": "₹1420 - ₹2850"
+  },
+  {
+    "number": "13257",
+    "name": "Jansadharan Express",
+    "from": "Danapur (DNR)",
+    "to": "Anand Vihar (ANVT)",
+    "departure": "01:30 PM",
+    "arrival": "06:00 AM",
+    "duration": "16h 30m",
+    "runningDays": "M, W, F",
+    "classes": ["2S", "GN"],
+    "status": "Delayed 15m",
+    "dataSource": "DEMO",
+    "availability": "Available (2S: AVL 180)",
+    "fare": "₹225"
+  }
+]
