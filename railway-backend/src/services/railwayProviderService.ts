@@ -9,7 +9,7 @@ import {
 
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
-    return process.env.RAILKIT_API_KEY;
+    return process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
   }
 
   private getBaseUrl(): string {
@@ -40,7 +40,7 @@ export class RailwayProviderService {
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        throw new Error('RailKit provider request timed out');
+        throw new Error('Provider request timed out');
       }
       throw error;
     }
@@ -328,13 +328,32 @@ export class RailwayProviderService {
     }
 
     try {
-      const url = `https://api.waqi.info/feed/${lat};${lon}/?token=${aqiKey}`;
-      const res = await this.fetchWithTimeout(url);
-      if (!res.ok) {
-        return { status: 'UNAVAILABLE', message: 'AQI service unavailable' };
+      // 1. Try exact coordinate feed first
+      let url = `https://api.waqi.info/feed/${lat};${lon}/?token=${aqiKey}`;
+      let res = await this.fetchWithTimeout(url);
+      let json: any = await res.json();
+
+      // 2. If coordinate feed returns error or unknown station, fallback to regional/nearest city station lookup (e.g. Patna)
+      if (!res.ok || json.status !== 'ok' || !json.data) {
+        const latNum = parseFloat(lat);
+        const lonNum = parseFloat(lon);
+        let cityName = 'Patna';
+        if (latNum >= 24 && latNum <= 27 && lonNum >= 83 && lonNum <= 88) {
+          cityName = 'Patna';
+        } else if (latNum >= 28 && latNum <= 29 && lonNum >= 76 && lonNum <= 78) {
+          cityName = 'Delhi';
+        } else {
+          cityName = 'Patna';
+        }
+
+        url = `https://api.waqi.info/feed/${encodeURIComponent(cityName)}/?token=${aqiKey}`;
+        res = await this.fetchWithTimeout(url);
+        if (res.ok) {
+          json = await res.json();
+        }
       }
-      const json: any = await res.json();
-      if (json.status !== 'ok' || !json.data) {
+
+      if (!res.ok || json.status !== 'ok' || !json.data) {
         return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
       }
 
