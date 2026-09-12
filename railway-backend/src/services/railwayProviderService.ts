@@ -328,7 +328,7 @@ export class RailwayProviderService {
 
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const aqiKey = this.getAqiKey();
-    console.log(`[AQI Diagnostic]: AQICN_API_KEY configured: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}`);
+    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}`);
 
     if (!aqiKey) {
       return {
@@ -338,19 +338,18 @@ export class RailwayProviderService {
     }
 
     try {
-      // 1. Try exact coordinate feed first
-      let url = `https://api.waqi.info/feed/${lat};${lon}/?token=${aqiKey}`;
+      // 1. Try official AQICN geo feed format: feed/geo:lat;lon/
+      let url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
       let res = await this.fetchWithTimeout(url);
       let json: any = await res.json();
 
       console.log(`[AQI Response Check]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
 
-      // 2. If coordinate feed returns error or unknown station, fallback to regional/nearest city station lookup (e.g. Patna)
-      if (!res.ok || json.status !== 'ok' || !json.data) {
-        if (json.status === 'error' && json.data === 'Invalid key') {
+      if (json.status === 'error') {
+        if (json.data === 'Invalid key') {
           return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
         }
-
+        // If geo feed returns error/unknown station, try city feed fallback
         const latNum = parseFloat(lat);
         const lonNum = parseFloat(lon);
         let cityName = 'Patna';
@@ -366,14 +365,17 @@ export class RailwayProviderService {
         res = await this.fetchWithTimeout(url);
         if (res.ok) {
           json = await res.json();
-          console.log(`[AQI City Fallback Response]: HTTP status: ${res.status}, WAQI status: ${json.status}`);
+          console.log(`[AQI City Fallback Response]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
+          if (json.status === 'error') {
+            if (json.data === 'Invalid key') {
+              return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
+            }
+            return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
+          }
         }
       }
 
       if (!res.ok || json.status !== 'ok' || !json.data) {
-        if (json.status === 'error' && json.data === 'Invalid key') {
-          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
-        }
         return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
       }
 
