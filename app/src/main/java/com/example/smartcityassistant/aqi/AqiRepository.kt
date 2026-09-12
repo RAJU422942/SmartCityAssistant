@@ -2,6 +2,7 @@ package com.example.smartcityassistant.aqi
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.google.gson.Gson
 
 class AqiRepository(context: Context) {
@@ -55,10 +56,10 @@ class AqiRepository(context: Context) {
     fun saveCache(response: AqiResponseDto) {
         try {
             val cached = CachedAqi(response, System.currentTimeMillis())
-            prefs.edit()
-                .putString(KEY_AQI_DATA, gson.toJson(cached))
-                .putLong(KEY_TIMESTAMP, System.currentTimeMillis())
-                .apply()
+            prefs.edit {
+                putString(KEY_AQI_DATA, gson.toJson(cached))
+                putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+            }
         } catch (_: Exception) {
         }
     }
