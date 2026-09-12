@@ -9,7 +9,15 @@ import {
 
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
-    return process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
+    const rawKey = process.env.RAILKIT_API_KEY;
+    if (!rawKey) return undefined;
+    return rawKey.trim().replace(/^["']|["']$/g, '');
+  }
+
+  private getAqiKey(): string | undefined {
+    const rawKey = process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
+    if (!rawKey) return undefined;
+    return rawKey.trim().replace(/^["']|["']$/g, '');
   }
 
   private getBaseUrl(): string {
@@ -319,7 +327,9 @@ export class RailwayProviderService {
   }
 
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
-    const aqiKey = process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
+    const aqiKey = this.getAqiKey();
+    console.log(`[AQI Config Check]: AQICN_API_KEY configured: ${!!aqiKey}, length: ${aqiKey?.length || 0}`);
+
     if (!aqiKey || aqiKey === 'your_railkit_api_key_here') {
       return {
         status: 'UNAVAILABLE',
