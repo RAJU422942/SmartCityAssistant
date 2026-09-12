@@ -15,7 +15,7 @@ export class RailwayProviderService {
   }
 
   private getAqiKey(): string | undefined {
-    const rawKey = process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
+    const rawKey = process.env.AQICN_API_KEY;
     if (!rawKey) return undefined;
     return rawKey.trim().replace(/^["']|["']$/g, '');
   }
@@ -328,9 +328,9 @@ export class RailwayProviderService {
 
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const aqiKey = this.getAqiKey();
-    console.log(`[AQI Config Check]: AQICN_API_KEY configured: ${!!aqiKey}, length: ${aqiKey?.length || 0}`);
+    console.log(`[AQI Diagnostic]: AQICN_API_KEY configured: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}`);
 
-    if (!aqiKey || aqiKey === 'your_railkit_api_key_here') {
+    if (!aqiKey) {
       return {
         status: 'UNAVAILABLE',
         message: 'AQI provider is not configured'
@@ -343,8 +343,14 @@ export class RailwayProviderService {
       let res = await this.fetchWithTimeout(url);
       let json: any = await res.json();
 
+      console.log(`[AQI Response Check]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
+
       // 2. If coordinate feed returns error or unknown station, fallback to regional/nearest city station lookup (e.g. Patna)
       if (!res.ok || json.status !== 'ok' || !json.data) {
+        if (json.status === 'error' && json.data === 'Invalid key') {
+          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
+        }
+
         const latNum = parseFloat(lat);
         const lonNum = parseFloat(lon);
         let cityName = 'Patna';
@@ -360,11 +366,12 @@ export class RailwayProviderService {
         res = await this.fetchWithTimeout(url);
         if (res.ok) {
           json = await res.json();
+          console.log(`[AQI City Fallback Response]: HTTP status: ${res.status}, WAQI status: ${json.status}`);
         }
       }
 
       if (!res.ok || json.status !== 'ok' || !json.data) {
-        if (json.data === 'Invalid key') {
+        if (json.status === 'error' && json.data === 'Invalid key') {
           return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
         }
         return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
@@ -398,6 +405,7 @@ export class RailwayProviderService {
         timeString: d.time?.s || null
       };
     } catch (e: any) {
+      console.error('[AQI Service Error]:', e.message);
       return { status: 'ERROR', message: e.message || 'AQI service error' };
     }
   }
