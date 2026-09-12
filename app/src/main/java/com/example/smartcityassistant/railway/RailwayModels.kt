@@ -66,7 +66,8 @@ data class BackendLiveStatusResponse(
     val delayMinutes: Int,
     val runningState: String,
     val lastUpdated: String,
-    val status: String
+    val status: String,
+    val message: String? = null
 )
 
 data class BackendPnrResponse(
@@ -79,12 +80,28 @@ data class BackendPnrResponse(
     val bookingStatus: String,
     val currentStatus: String,
     val coachBerth: String,
-    val chartingStatus: String
+    val chartingStatus: String,
+    val status: String? = null,
+    val message: String? = null
 )
 
 data class BackendAvailabilityResponse(
     val trainNumber: String,
     val status: String,
     val availabilityText: String,
-    val fare: String?
+    val fare: String?,
+    val message: String? = null
+)
+
+data class BackendTrainResponse(
+    val trainNumber: String?,
+    val trainName: String?,
+    val source: String?,
+    val destination: String?,
+    val departureTime: String?,
+    val arrivalTime: String?,
+    val duration: String?,
+    val runningDays: List<String>?,
+    val status: String?,
+    val classes: List<String>?
 )

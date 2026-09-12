@@ -1,6 +1,8 @@
 package com.example.smartcityassistant
 
 import com.example.smartcityassistant.railway.*
+import com.example.smartcityassistant.aqi.*
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -77,7 +79,9 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.ui.text.input.KeyboardType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -365,7 +369,11 @@ fun MainNavigation() {
                     onSearch = { _, _, results ->
                         trainSearchResults = results
                         currentScreen = "railway_results"
-                    }
+                    },
+                    onNavigate = { route -> currentScreen = route }
+                )
+                "railway_pnr" -> RailwayPnrScreen(
+                    onBack = { currentScreen = "transport_railway" }
                 )
                 "railway_results" -> RailwayResultsScreen(
                     results = trainSearchResults,
@@ -413,6 +421,11 @@ fun MainNavigation() {
                 "ai_assistant" -> AIAssistantScreen { currentScreen = "home" }
                 "explore" -> ExplorePlaceholder { currentScreen = "home" }
                 "profile" -> ProfilePlaceholder { currentScreen = "home" }
+                "aqi_details" -> {
+                    val aqiViewModel: AqiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+                    val aqiState by aqiViewModel.uiState.collectAsState()
+                    AqiDetailsScreen(state = aqiState) { currentScreen = "home" }
+                }
             }
         }
     }
@@ -452,6 +465,20 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
         }
 
         Column(modifier = Modifier.padding(20.dp).verticalScroll(scrollState)) {
+            val context = LocalContext.current
+            val aqiViewModel: AqiViewModel = viewModel()
+            val aqiState by aqiViewModel.uiState.collectAsState()
+
+            LaunchedEffect(Unit) {
+                aqiViewModel.loadAqi(25.6022, 85.1376)
+            }
+
+            AqiCard(uiState = aqiState) {
+                onNavigate("aqi_details")
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             // Emergency Button
             Button(
                 onClick = { onNavigate("emergency") },
@@ -2166,7 +2193,8 @@ fun BusTrackingScreen(bus: BusSearchResult?, onBack: () -> Unit) {
 fun RailwayServiceScreen(
     baseLocation: TransportLocation?,
     onBack: () -> Unit,
-    onSearch: (String, String, List<Train>) -> Unit
+    onSearch: (String, String, List<Train>) -> Unit,
+    onNavigate: (String) -> Unit
 ) {
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
@@ -2387,6 +2415,33 @@ fun RailwayServiceScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Check PNR Status Button Card
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onNavigate("railway_pnr") },
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(color = StatusBlue, shape = CircleShape, modifier = Modifier.size(46.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Assignment, null, tint = PrimaryNavy, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Check PNR Status", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                        Text("Check ticket confirmation & booking status", fontSize = 12.sp, color = SecondaryText)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = SecondaryText)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Main Search Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -2417,7 +2472,15 @@ fun RailwayServiceScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            singleLine = true
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = MainText,
+                                unfocusedTextColor = MainText,
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = SecondaryBlue,
+                                unfocusedBorderColor = DividerColor
+                            )
                         )
                         DropdownMenu(
                             expanded = showFromDropdown && allStations.isNotEmpty(),
@@ -2474,7 +2537,15 @@ fun RailwayServiceScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            singleLine = true
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = MainText,
+                                unfocusedTextColor = MainText,
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = SecondaryBlue,
+                                unfocusedBorderColor = DividerColor
+                            )
                         )
                         DropdownMenu(
                             expanded = showToDropdown && allStations.isNotEmpty(),
@@ -2981,6 +3052,168 @@ fun RailwayLiveStatusScreen(
                         Icon(Icons.Default.Info, null, tint = SecondaryBlue, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(10.dp))
                         Text("Never invent train numbers, timings, fares, availability or live train status. Official data sources are enforced.", fontSize = 12.sp, color = SecondaryText)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RailwayPnrScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pnrInput by rememberSaveable { mutableStateOf("") }
+    var pnrResult by remember { mutableStateOf<BackendPnrResponse?>(null) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
+        TopAppBar(title = "PNR Status", onBack)
+
+        Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(3.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Check Ticket Status", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Enter your 10-digit PNR number", fontSize = 12.sp, color = SecondaryText)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = pnrInput,
+                        onValueChange = { if (it.length <= 10 && it.all { ch -> ch.isDigit() }) pnrInput = it },
+                        label = { Text("10-digit PNR Number") },
+                        leadingIcon = { Icon(Icons.Default.Assignment, null, tint = SecondaryBlue) },
+                        trailingIcon = {
+                            if (pnrInput.isNotBlank()) {
+                                IconButton(onClick = { pnrInput = "" }) {
+                                    Icon(Icons.Default.Clear, null, tint = SecondaryText)
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MainText,
+                            unfocusedTextColor = MainText,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = SecondaryBlue,
+                            unfocusedBorderColor = DividerColor
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("${pnrInput.length}/10 digits", fontSize = 11.sp, color = SecondaryText)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (pnrInput.length != 10) {
+                                errorMessage = "PNR must be exactly 10 digits"
+                                pnrResult = null
+                                return@Button
+                            }
+                            isLoading = true
+                            errorMessage = null
+                            pnrResult = null
+                            scope.launch {
+                                val repo = RailwayProvider.getRepository(context)
+                                val result = repo.getPnrStatus(pnrInput)
+                                isLoading = false
+                                result.fold(
+                                    onSuccess = { data ->
+                                        if (data.currentStatus == "UNAVAILABLE" || data.pnrNumber.isBlank()) {
+                                            errorMessage = "PNR status unavailable"
+                                        } else {
+                                            pnrResult = data
+                                        }
+                                    },
+                                    onFailure = { err ->
+                                        errorMessage = err.localizedMessage ?: "PNR status unavailable"
+                                    }
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("CHECK PNR STATUS", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            errorMessage?.let { msg ->
+                Spacer(modifier = Modifier.height(20.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f))
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, null, tint = ErrorRed, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(msg, fontSize = 13.sp, color = ErrorRed, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+
+            pnrResult?.let { pnr ->
+                Spacer(modifier = Modifier.height(20.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(3.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("PNR: ${pnr.pnrNumber}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                            Surface(color = Color(0xFFE8F5E9), shape = RoundedCornerShape(6.dp)) {
+                                Text(pnr.currentStatus, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text("Train: ${pnr.trainNumber} - ${pnr.trainName}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MainText)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Journey Date: ${pnr.journeyDate}", fontSize = 13.sp, color = SecondaryText)
+                        Text("From: ${pnr.from}", fontSize = 13.sp, color = SecondaryText)
+                        Text("To: ${pnr.to}", fontSize = 13.sp, color = SecondaryText)
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("BOOKING STATUS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Text(pnr.bookingStatus, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("COACH / BERTH", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Text(pnr.coachBerth, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("Charting Status: ${pnr.chartingStatus}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SecondaryBlue)
                     }
                 }
             }
