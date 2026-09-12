@@ -354,6 +354,9 @@ export class RailwayProviderService {
       }
 
       if (!res.ok || json.status !== 'ok' || !json.data) {
+        if (json.data === 'Invalid key') {
+          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
+        }
         return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
       }
 
