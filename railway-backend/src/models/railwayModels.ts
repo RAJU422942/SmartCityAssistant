@@ -7,6 +7,7 @@ export interface BackendLiveStatusResponse {
   runningState: string;
   lastUpdated: string;
   status: string;
+  message?: string;
 }
 
 export interface BackendPnrResponse {
@@ -20,6 +21,8 @@ export interface BackendPnrResponse {
   currentStatus: string;
   coachBerth: string;
   chartingStatus: string;
+  status?: string;
+  message?: string;
 }
 
 export interface BackendAvailabilityResponse {
@@ -27,6 +30,35 @@ export interface BackendAvailabilityResponse {
   status: string;
   availabilityText: string;
   fare: string | null;
+  message?: string;
+}
+
+export interface BackendTrainResponse {
+  trainNumber: string;
+  trainName: string;
+  source: string;
+  destination: string;
+  departureTime: string;
+  arrivalTime: string;
+  duration: string;
+  runningDays: string[];
+  status: string;
+  classes: string[];
+}
+
+export interface BackendAqiResponse {
+  status: string;
+  aqi?: number;
+  category?: string;
+  dominantPollutant?: string | null;
+  stationName?: string | null;
+  pm25?: number | null;
+  pm10?: number | null;
+  co?: number | null;
+  no2?: number | null;
+  o3?: number | null;
+  timeString?: string | null;
+  message?: string;
 }
 
 export interface UnavailableResponse {

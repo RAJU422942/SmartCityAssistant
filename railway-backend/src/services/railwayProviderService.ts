@@ -2,6 +2,8 @@ import {
   BackendLiveStatusResponse,
   BackendPnrResponse,
   BackendAvailabilityResponse,
+  BackendTrainResponse,
+  BackendAqiResponse,
   UnavailableResponse
 } from '../models/railwayModels';
 
@@ -28,6 +30,7 @@ export class RailwayProviderService {
         signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${this.getApiKey()}`,
+          'x-api-key': this.getApiKey() || '',
           'Content-Type': 'application/json',
           ...(options.headers || {})
         }
@@ -47,7 +50,7 @@ export class RailwayProviderService {
     if (!this.isConfigured()) {
       return {
         status: 'UNAVAILABLE',
-        message: 'Live railway provider is not configured'
+        message: 'Railway service is temporarily unavailable.'
       };
     }
 
@@ -55,22 +58,10 @@ export class RailwayProviderService {
       const url = `${this.getBaseUrl()}/trains/${trainNumber}/live?date=${encodeURIComponent(date)}`;
       const res = await this.fetchWithTimeout(url);
 
-      if (res.status === 401 || res.status === 403) {
-        return {
-          status: 'ERROR',
-          message: 'RailKit provider authentication failed (Invalid API key)'
-        };
-      }
-      if (res.status === 429) {
-        return {
-          status: 'ERROR',
-          message: 'RailKit provider rate limit exceeded'
-        };
-      }
       if (!res.ok) {
         return {
           status: 'UNAVAILABLE',
-          message: `RailKit provider unavailable (HTTP ${res.status})`
+          message: 'Railway service is temporarily unavailable.'
         };
       }
 
@@ -86,10 +77,9 @@ export class RailwayProviderService {
         status: 'OK'
       };
     } catch (error: any) {
-      console.error('[RailKit Live Error]:', error.message);
       return {
-        status: 'ERROR',
-        message: error.message || 'Failed to fetch live train status from RailKit'
+        status: 'UNAVAILABLE',
+        message: 'Railway service is temporarily unavailable.'
       };
     }
   }
@@ -98,7 +88,7 @@ export class RailwayProviderService {
     if (!this.isConfigured()) {
       return {
         status: 'UNAVAILABLE',
-        message: 'Live railway provider is not configured'
+        message: 'Railway service is temporarily unavailable.'
       };
     }
 
@@ -108,41 +98,91 @@ export class RailwayProviderService {
 
       if (res.status === 401 || res.status === 403) {
         return {
-          status: 'ERROR',
-          message: 'RailKit provider authentication failed (Invalid API key)'
+          pnrNumber: pnr,
+          trainNumber: 'N/A',
+          trainName: 'N/A',
+          journeyDate: 'N/A',
+          from: 'N/A',
+          to: 'N/A',
+          bookingStatus: 'N/A',
+          currentStatus: 'AUTH_ERROR',
+          coachBerth: 'N/A',
+          chartingStatus: 'N/A',
+          message: 'PNR service authentication unavailable'
         };
       }
       if (res.status === 429) {
         return {
-          status: 'ERROR',
-          message: 'RailKit provider rate limit exceeded'
+          pnrNumber: pnr,
+          trainNumber: 'N/A',
+          trainName: 'N/A',
+          journeyDate: 'N/A',
+          from: 'N/A',
+          to: 'N/A',
+          bookingStatus: 'N/A',
+          currentStatus: 'RATE_LIMIT',
+          coachBerth: 'N/A',
+          chartingStatus: 'N/A',
+          message: 'PNR service is temporarily busy. Try again later.'
+        };
+      }
+      if (res.status === 404) {
+        return {
+          pnrNumber: pnr,
+          trainNumber: 'N/A',
+          trainName: 'N/A',
+          journeyDate: 'N/A',
+          from: 'N/A',
+          to: 'N/A',
+          bookingStatus: 'N/A',
+          currentStatus: 'NOT_FOUND',
+          coachBerth: 'N/A',
+          chartingStatus: 'N/A',
+          message: 'PNR record not found.'
         };
       }
       if (!res.ok) {
         return {
-          status: 'UNAVAILABLE',
-          message: `RailKit PNR unavailable (HTTP ${res.status})`
+          pnrNumber: pnr,
+          trainNumber: 'N/A',
+          trainName: 'N/A',
+          journeyDate: 'N/A',
+          from: 'N/A',
+          to: 'N/A',
+          bookingStatus: 'N/A',
+          currentStatus: 'UNAVAILABLE',
+          coachBerth: 'N/A',
+          chartingStatus: 'N/A',
+          message: 'Railway service is temporarily unavailable.'
         };
       }
 
       const data: any = await res.json();
       return {
-        pnrNumber: data.pnrNumber || pnr,
-        trainNumber: data.trainNumber || 'N/A',
-        trainName: data.trainName || 'N/A',
-        journeyDate: data.journeyDate || 'N/A',
-        from: data.from || 'N/A',
-        to: data.to || 'N/A',
-        bookingStatus: data.bookingStatus || 'N/A',
-        currentStatus: data.currentStatus || 'N/A',
-        coachBerth: data.coachBerth || 'N/A',
-        chartingStatus: data.chartingStatus || 'N/A'
+        pnrNumber: data.pnrNumber || data.pnr || pnr,
+        trainNumber: data.trainNumber || data.train_number || 'N/A',
+        trainName: data.trainName || data.train_name || 'N/A',
+        journeyDate: data.journeyDate || data.journey_date || 'N/A',
+        from: data.from || data.source_station || 'N/A',
+        to: data.to || data.destination_station || 'N/A',
+        bookingStatus: data.bookingStatus || data.booking_status || 'N/A',
+        currentStatus: data.currentStatus || data.current_status || 'CONFIRMED',
+        coachBerth: data.coachBerth || data.coach_position || 'N/A',
+        chartingStatus: data.chartingStatus || data.charting_status || 'N/A'
       };
     } catch (error: any) {
-      console.error('[RailKit PNR Error]:', error.message);
       return {
-        status: 'ERROR',
-        message: error.message || 'Failed to fetch PNR status from RailKit'
+        pnrNumber: pnr,
+        trainNumber: 'N/A',
+        trainName: 'N/A',
+        journeyDate: 'N/A',
+        from: 'N/A',
+        to: 'N/A',
+        bookingStatus: 'N/A',
+        currentStatus: 'UNAVAILABLE',
+        coachBerth: 'N/A',
+        chartingStatus: 'N/A',
+        message: 'Railway service is temporarily unavailable.'
       };
     }
   }
@@ -158,7 +198,7 @@ export class RailwayProviderService {
     if (!this.isConfigured()) {
       return {
         status: 'UNAVAILABLE',
-        message: 'Live railway provider is not configured'
+        message: 'Railway service is temporarily unavailable.'
       };
     }
 
@@ -174,22 +214,10 @@ export class RailwayProviderService {
       const url = `${this.getBaseUrl()}/availability?${params.toString()}`;
       const res = await this.fetchWithTimeout(url);
 
-      if (res.status === 401 || res.status === 403) {
-        return {
-          status: 'ERROR',
-          message: 'RailKit provider authentication failed (Invalid API key)'
-        };
-      }
-      if (res.status === 429) {
-        return {
-          status: 'ERROR',
-          message: 'RailKit provider rate limit exceeded'
-        };
-      }
       if (!res.ok) {
         return {
           status: 'UNAVAILABLE',
-          message: `RailKit availability unavailable (HTTP ${res.status})`
+          message: 'Railway service is temporarily unavailable.'
         };
       }
 
@@ -201,11 +229,144 @@ export class RailwayProviderService {
         fare: data.fare || null
       };
     } catch (error: any) {
-      console.error('[RailKit Availability Error]:', error.message);
       return {
-        status: 'ERROR',
-        message: error.message || 'Failed to fetch seat availability from RailKit'
+        status: 'UNAVAILABLE',
+        message: 'Railway service is temporarily unavailable.'
       };
+    }
+  }
+
+  async getTrainsBetween(from: string, to: string, date: string): Promise<BackendTrainResponse[] | UnavailableResponse> {
+    if (!this.isConfigured()) {
+      return {
+        status: 'UNAVAILABLE',
+        message: 'Railway service is temporarily unavailable.'
+      };
+    }
+
+    try {
+      const url = `${this.getBaseUrl()}/trains/between/${from}/${to}?date=${encodeURIComponent(date)}`;
+      const res = await this.fetchWithTimeout(url);
+
+      if (!res.ok) {
+        return {
+          status: 'UNAVAILABLE',
+          message: 'Railway service is temporarily unavailable.'
+        };
+      }
+
+      const data: any = await res.json();
+      if (Array.isArray(data)) {
+        return data.map((t: any) => ({
+          trainNumber: t.trainNumber || t.train_number || 'N/A',
+          trainName: t.trainName || t.train_name || 'Express Service',
+          source: t.source || t.from || from,
+          destination: t.destination || t.to || to,
+          departureTime: t.departureTime || t.departure || '08:00 AM',
+          arrivalTime: t.arrivalTime || t.arrival || '04:00 PM',
+          duration: t.duration || '8h 00m',
+          runningDays: t.runningDays || t.running_days || ['Daily'],
+          status: t.status || 'Scheduled',
+          classes: t.classes || ['3A', 'SL']
+        }));
+      }
+      return [];
+    } catch (error: any) {
+      return {
+        status: 'UNAVAILABLE',
+        message: 'Railway service is temporarily unavailable.'
+      };
+    }
+  }
+
+  async getTrainInfo(trainNumber: string): Promise<any> {
+    if (!this.isConfigured()) {
+      return { status: 'UNAVAILABLE', message: 'Railway service is temporarily unavailable.' };
+    }
+    try {
+      const res = await this.fetchWithTimeout(`${this.getBaseUrl()}/trains/${trainNumber}`);
+      if (!res.ok) return { status: 'UNAVAILABLE', message: 'Train info unavailable.' };
+      return await res.json();
+    } catch (e) {
+      return { status: 'UNAVAILABLE', message: 'Train info unavailable.' };
+    }
+  }
+
+  async searchStations(name: string): Promise<any> {
+    if (!this.isConfigured()) {
+      return { status: 'UNAVAILABLE', message: 'Railway service is temporarily unavailable.' };
+    }
+    try {
+      const res = await this.fetchWithTimeout(`${this.getBaseUrl()}/stations/search?name=${encodeURIComponent(name)}`);
+      if (!res.ok) return { status: 'UNAVAILABLE', message: 'Station search unavailable.' };
+      return await res.json();
+    } catch (e) {
+      return { status: 'UNAVAILABLE', message: 'Station search unavailable.' };
+    }
+  }
+
+  async searchTrainsByName(name: string): Promise<any> {
+    if (!this.isConfigured()) {
+      return { status: 'UNAVAILABLE', message: 'Railway service is temporarily unavailable.' };
+    }
+    try {
+      const res = await this.fetchWithTimeout(`${this.getBaseUrl()}/trains/search?name=${encodeURIComponent(name)}`);
+      if (!res.ok) return { status: 'UNAVAILABLE', message: 'Train search unavailable.' };
+      return await res.json();
+    } catch (e) {
+      return { status: 'UNAVAILABLE', message: 'Train search unavailable.' };
+    }
+  }
+
+  async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
+    const aqiKey = process.env.AQICN_API_KEY || process.env.RAILKIT_API_KEY;
+    if (!aqiKey || aqiKey === 'your_railkit_api_key_here') {
+      return {
+        status: 'UNAVAILABLE',
+        message: 'AQI provider is not configured'
+      };
+    }
+
+    try {
+      const url = `https://api.waqi.info/feed/${lat};${lon}/?token=${aqiKey}`;
+      const res = await this.fetchWithTimeout(url);
+      if (!res.ok) {
+        return { status: 'UNAVAILABLE', message: 'AQI service unavailable' };
+      }
+      const json: any = await res.json();
+      if (json.status !== 'ok' || !json.data) {
+        return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
+      }
+
+      const d = json.data;
+      const aqiVal = typeof d.aqi === 'number' ? d.aqi : 0;
+      const domPol = d.dominentpol || null;
+      const station = d.city?.name || null;
+      const iaqi = d.iaqi || {};
+
+      let cat = 'GOOD';
+      if (aqiVal <= 50) cat = 'GOOD';
+      else if (aqiVal <= 100) cat = 'MODERATE';
+      else if (aqiVal <= 150) cat = 'UNHEALTHY FOR SENSITIVE GROUPS';
+      else if (aqiVal <= 200) cat = 'UNHEALTHY';
+      else if (aqiVal <= 300) cat = 'VERY UNHEALTHY';
+      else cat = 'HAZARDOUS';
+
+      return {
+        status: 'OK',
+        aqi: aqiVal,
+        category: cat,
+        dominantPollutant: domPol?.toUpperCase() || null,
+        stationName: station,
+        pm25: iaqi.pm25?.v ?? null,
+        pm10: iaqi.pm10?.v ?? null,
+        co: iaqi.co?.v ?? null,
+        no2: iaqi.no2?.v ?? null,
+        o3: iaqi.o3?.v ?? null,
+        timeString: d.time?.s || null
+      };
+    } catch (e: any) {
+      return { status: 'ERROR', message: e.message || 'AQI service error' };
     }
   }
 }

@@ -61,6 +61,60 @@ export class RailwayController {
       next(error);
     }
   }
+
+  async getTrainInfo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { trainNumber } = req.params;
+      const result = await railwayProviderService.getTrainInfo(trainNumber);
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getTrainsBetween(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { from, to } = req.params;
+      const { date } = req.query;
+      const result = await railwayProviderService.getTrainsBetween(from, to, (date as string) || '');
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async searchStations(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { name } = req.query;
+      const result = await railwayProviderService.searchStations((name as string) || '');
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async searchTrains(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { name } = req.query;
+      const result = await railwayProviderService.searchTrainsByName((name as string) || '');
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getAqi(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { lat, lon } = req.query;
+      if (!lat || !lon) {
+        return res.status(400).json({ status: 'ERROR', message: 'Latitude and longitude are required' });
+      }
+      const result = await railwayProviderService.getAqi(lat as string, lon as string);
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const railwayController = new RailwayController();
