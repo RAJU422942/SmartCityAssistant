@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,16 +38,30 @@ fun AqiCard(
                             Spacer(modifier = Modifier.height(4.dp))
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         }
-                        Text("Loading...", fontSize = 12.sp, color = Color.Gray)
+                        Text("Connecting to server...", fontSize = 12.sp, color = Color.Gray)
                     }
                 }
             }
             is AqiUiState.Error -> {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onClick() }
+                        .padding(16.dp)
+                ) {
                     Column {
-                        Text("AIR QUALITY (AQI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("AQI unavailable", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.DarkGray)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("AIR QUALITY (AQI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("AQI unavailable (Tap to retry)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
+                            }
+                            Icon(Icons.Default.Refresh, contentDescription = "Retry", tint = Color(0xFF0D2B4E), modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             }
