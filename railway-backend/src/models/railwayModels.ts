@@ -58,6 +58,8 @@ export interface BackendAqiResponse {
   no2?: number | null;
   o3?: number | null;
   timeString?: string | null;
+  isApproximate?: boolean;
+  distanceKm?: number;
   message?: string;
 }
 

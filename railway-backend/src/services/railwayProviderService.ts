@@ -7,6 +7,48 @@ import {
   UnavailableResponse
 } from '../models/railwayModels';
 
+interface FallbackCity {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+const FALLBACK_CITIES: FallbackCity[] = [
+  { name: 'Mehsana / Ahmedabad (Gujarat)', lat: 23.0225, lon: 72.5714 },
+  { name: 'Patna (Bihar)', lat: 25.6022, lon: 85.1376 },
+  { name: 'Delhi / NCR', lat: 28.6139, lon: 77.2090 },
+  { name: 'Chennai (Tamil Nadu)', lat: 13.0827, lon: 80.2707 },
+  { name: 'Mumbai (Maharashtra)', lat: 19.0760, lon: 72.8777 },
+  { name: 'Kolkata (West Bengal)', lat: 22.5726, lon: 88.3639 },
+  { name: 'Bengaluru (Karnataka)', lat: 12.9716, lon: 77.5946 },
+  { name: 'Hyderabad (Telangana)', lat: 17.3850, lon: 78.4867 }
+];
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function nearestFallbackCity(lat: number, lon: number): FallbackCity {
+  let nearest = FALLBACK_CITIES[0];
+  let minDist = haversineKm(lat, lon, nearest.lat, nearest.lon);
+  for (let i = 1; i < FALLBACK_CITIES.length; i++) {
+    const dist = haversineKm(lat, lon, FALLBACK_CITIES[i].lat, FALLBACK_CITIES[i].lon);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = FALLBACK_CITIES[i];
+    }
+  }
+  return nearest;
+}
+
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
@@ -338,45 +380,44 @@ export class RailwayProviderService {
     }
 
     try {
-      // 1. Try official AQICN geo feed format: feed/geo:lat;lon/
-      let url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
+      const latNum = parseFloat(lat);
+      const lonNum = parseFloat(lon);
+
+      // 1. Try exact coordinate geo feed first: feed/geo:lat;lon/
+      let url = `https://api.waqi.info/feed/geo:${latNum};${lonNum}/?token=${aqiKey}`;
       let res = await this.fetchWithTimeout(url);
       let json: any = await res.json();
 
-      console.log(`[AQI Response Check]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
+      console.log(`[AQI Exact Geo Response]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
 
       if (json.status === 'error') {
         if (json.data === 'Invalid key') {
           return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
         }
-        // If geo feed returns error/unknown station, try city feed fallback
-        const latNum = parseFloat(lat);
-        const lonNum = parseFloat(lon);
-        let cityName = 'Patna';
-        if (latNum >= 24 && latNum <= 27 && lonNum >= 83 && lonNum <= 88) {
-          cityName = 'Patna';
-        } else if (latNum >= 28 && latNum <= 29 && lonNum >= 76 && lonNum <= 78) {
-          cityName = 'Delhi';
-        } else {
-          cityName = 'Patna';
-        }
+      }
 
-        url = `https://api.waqi.info/feed/${encodeURIComponent(cityName)}/?token=${aqiKey}`;
+      let isApproximate = false;
+      let distanceKm = 0;
+
+      // 2. If exact coordinate feed returns error or unknown station, fallback to nearest known-good city coordinates via geo:lat;lon
+      if (!res.ok || json.status !== 'ok' || !json.data) {
+        const nearest = nearestFallbackCity(latNum, lonNum);
+        distanceKm = Math.round(haversineKm(latNum, lonNum, nearest.lat, nearest.lon));
+        isApproximate = true;
+
+        url = `https://api.waqi.info/feed/geo:${nearest.lat};${nearest.lon}/?token=${aqiKey}`;
         res = await this.fetchWithTimeout(url);
         if (res.ok) {
           json = await res.json();
-          console.log(`[AQI City Fallback Response]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
-          if (json.status === 'error') {
-            if (json.data === 'Invalid key') {
-              return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
-            }
-            return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
+          console.log(`[AQI Nearest City Geo Response]: City: ${nearest.name}, HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
+          if (json.status === 'error' && json.data === 'Invalid key') {
+            return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
           }
         }
       }
 
       if (!res.ok || json.status !== 'ok' || !json.data) {
-        return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
+        return { status: 'UNAVAILABLE', message: 'No AQI station found within region' };
       }
 
       const d = json.data;
@@ -404,7 +445,9 @@ export class RailwayProviderService {
         co: iaqi.co?.v ?? null,
         no2: iaqi.no2?.v ?? null,
         o3: iaqi.o3?.v ?? null,
-        timeString: d.time?.s || null
+        timeString: d.time?.s || null,
+        isApproximate,
+        distanceKm: isApproximate ? distanceKm : undefined
       };
     } catch (e: any) {
       console.error('[AQI Service Error]:', e.message);
