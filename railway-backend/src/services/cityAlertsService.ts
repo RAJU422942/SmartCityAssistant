@@ -27,10 +27,19 @@ export class CityAlertsService {
         const geomLat = parseFloat(parts[0] || '0');
         const geomLon = parseFloat(parts[1] || '0');
 
-        const dist = (geomLat && geomLon) ? this.haversineKm(lat, lon, geomLat, geomLon) : 0;
-        if (dist < 1200 || title.toLowerCase().includes('cyclone') || title.toLowerCase().includes('earthquake')) {
+        const dist = (geomLat && geomLon) ? this.haversineKm(lat, lon, geomLat, geomLon) : 99999;
+
+        // Centralized configurable relevance radius (400 km for local disasters, 600 km for major storms/cyclones)
+        const DEFAULT_DISASTER_RADIUS_KM = 400;
+        const lowerTitle = title.toLowerCase();
+        const isMajorStorm = lowerTitle.includes('cyclone') || lowerTitle.includes('storm') || lowerTitle.includes('typhoon') || lowerTitle.includes('hurricane');
+        const maxRadius = isMajorStorm ? 600 : DEFAULT_DISASTER_RADIUS_KM;
+
+        const included = dist <= maxRadius;
+        console.log(`[GDACS Filtering]: event="${title.substring(0, 30)}...", eventLat=${geomLat}, eventLon=${geomLon}, targetLat=${lat}, targetLon=${lon}, distance=${Math.round(dist)}km, maxRadius=${maxRadius}km, included=${included}`);
+
+        if (included) {
           let severity: AlertSeverity = 'MODERATE';
-          const lowerTitle = title.toLowerCase();
           if (lowerTitle.includes('red') || lowerTitle.includes('severe') || lowerTitle.includes('magnitude 6')) {
             severity = 'CRITICAL';
           } else if (lowerTitle.includes('orange') || lowerTitle.includes('moderate')) {
@@ -40,7 +49,7 @@ export class CityAlertsService {
           alerts.push({
             id: `gdacs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             title: title || 'Disaster Alert',
-            description: description || 'GDACS disaster event reported.',
+            description: description || 'GDACS disaster event reported within regional relevance radius.',
             category: 'DISASTER',
             severity,
             latitude: geomLat || undefined,
@@ -188,6 +197,8 @@ export class CityAlertsService {
   ): Promise<CityAlertsResponse> {
     const targetLat = lat ?? 25.6022;
     const targetLon = lon ?? 85.1376;
+
+    console.log(`[CITY_ALERTS_REQUEST]: lat=${targetLat}, lon=${targetLon}, city=${city || 'none'}, district=${district || 'none'}, category=${category || 'all'}`);
 
     const [gdacsAlerts, meteoAlerts, aqiAlerts] = await Promise.all([
       this.fetchGdacsAlerts(targetLat, targetLon),
