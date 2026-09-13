@@ -6,6 +6,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import railwayRoutes from './routes/railwayRoutes';
+import cityAlertsRoutes from './routes/cityAlertsRoutes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -31,6 +32,7 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/v1/railway', railwayRoutes);
+app.use('/api/v1/city-alerts', cityAlertsRoutes);
 
 // Error Handler
 app.use(errorHandler);
