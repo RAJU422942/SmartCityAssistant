@@ -368,9 +368,9 @@ export class RailwayProviderService {
     }
   }
 
-  async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
+  async getAqi(lat: string, lon: string, city?: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const aqiKey = this.getAqiKey();
-    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}`);
+    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}, city: ${city || 'none'}`);
 
     if (!aqiKey) {
       return {
@@ -380,44 +380,45 @@ export class RailwayProviderService {
     }
 
     try {
-      const latNum = parseFloat(lat);
-      const lonNum = parseFloat(lon);
+      let json: any = null;
+      let res: Response | null = null;
 
-      // 1. Try exact coordinate geo feed first: feed/geo:lat;lon/
-      let url = `https://api.waqi.info/feed/geo:${latNum};${lonNum}/?token=${aqiKey}`;
-      let res = await this.fetchWithTimeout(url);
-      let json: any = await res.json();
-
-      console.log(`[AQI Exact Geo Response]: HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
-
-      if (json.status === 'error') {
-        if (json.data === 'Invalid key') {
-          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
-        }
-      }
-
-      let isApproximate = false;
-      let distanceKm = 0;
-
-      // 2. If exact coordinate feed returns error or unknown station, fallback to nearest known-good city coordinates via geo:lat;lon
-      if (!res.ok || json.status !== 'ok' || !json.data) {
-        const nearest = nearestFallbackCity(latNum, lonNum);
-        distanceKm = Math.round(haversineKm(latNum, lonNum, nearest.lat, nearest.lon));
-        isApproximate = true;
-
-        url = `https://api.waqi.info/feed/geo:${nearest.lat};${nearest.lon}/?token=${aqiKey}`;
+      // 1. If city name is explicitly provided from manual search, try city feed first
+      if (city && city.trim().length > 0) {
+        const cityName = city.split(',')[0].trim();
+        const url = `https://api.waqi.info/feed/${encodeURIComponent(cityName)}/?token=${aqiKey}`;
         res = await this.fetchWithTimeout(url);
         if (res.ok) {
           json = await res.json();
-          console.log(`[AQI Nearest City Geo Response]: City: ${nearest.name}, HTTP status: ${res.status}, WAQI status: ${json.status}, data: ${JSON.stringify(json.data)}`);
-          if (json.status === 'error' && json.data === 'Invalid key') {
-            return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
-          }
         }
       }
 
-      if (!res.ok || json.status !== 'ok' || !json.data) {
-        return { status: 'UNAVAILABLE', message: 'No AQI station found within region' };
+      // 2. Try exact coordinate geo feed if no city or city feed failed
+      if (!json || json.status !== 'ok' || !json.data) {
+        const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
+        res = await this.fetchWithTimeout(url);
+        if (res.ok) {
+          json = await res.json();
+        }
+      }
+
+      // 3. Fallback to nearest coordinate city feed
+      if (!json || json.status !== 'ok' || !json.data) {
+        const latNum = parseFloat(lat);
+        const lonNum = parseFloat(lon);
+        const nearest = nearestFallbackCity(latNum, lonNum);
+        const url = `https://api.waqi.info/feed/geo:${nearest.lat};${nearest.lon}/?token=${aqiKey}`;
+        res = await this.fetchWithTimeout(url);
+        if (res.ok) {
+          json = await res.json();
+        }
+      }
+
+      if (!res || !res.ok || json?.status !== 'ok' || !json?.data) {
+        if (json?.status === 'error' && json?.data === 'Invalid key') {
+          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
+        }
+        return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
       }
 
       const d = json.data;
@@ -445,9 +446,7 @@ export class RailwayProviderService {
         co: iaqi.co?.v ?? null,
         no2: iaqi.no2?.v ?? null,
         o3: iaqi.o3?.v ?? null,
-        timeString: d.time?.s || null,
-        isApproximate,
-        distanceKm: isApproximate ? distanceKm : undefined
+        timeString: d.time?.s || null
       };
     } catch (e: any) {
       console.error('[AQI Service Error]:', e.message);
