@@ -2,16 +2,24 @@ import { CityAlert, AlertCategory, AlertSeverity, AlertStatus, CityAlertsRespons
 import { railwayProviderService } from './railwayProviderService';
 
 export class CityAlertsService {
-  private async fetchGdacsAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+  private async fetchGdacsAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], rawCount: number, withCoords: number, withinRadius: number }> {
     try {
       const res = await fetch('https://www.gdacs.org/xml/rss.xml', { signal: AbortSignal.timeout(6000) });
-      if (!res.ok) return [];
+      if (!res.ok) {
+        console.warn('[GDACS]: Status not OK:', res.status);
+        return { alerts: [], rawCount: 0, withCoords: 0, withinRadius: 0 };
+      }
       const xmlText = await res.text();
 
       const alerts: CityAlert[] = [];
       const itemRegex = /<item>([\s\S]*?)<\/item>/g;
       let match;
+      let rawCount = 0;
+      let withCoords = 0;
+      let withinRadius = 0;
+
       while ((match = itemRegex.exec(xmlText)) !== null) {
+        rawCount++;
         const itemContent = match[1];
         const getTag = (tag: string) => {
           const tMatch = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i').exec(itemContent);
@@ -22,21 +30,45 @@ export class CityAlertsService {
         const description = getTag('description');
         const link = getTag('link');
         const pubDate = getTag('pubDate');
+
+        let geomLat = 0;
+        let geomLon = 0;
+
         const pointStr = getTag('georss:point');
-        const parts = pointStr.split(/\s+/);
-        const geomLat = parseFloat(parts[0] || '0');
-        const geomLon = parseFloat(parts[1] || '0');
+        if (pointStr) {
+          const parts = pointStr.trim().split(/\s+/);
+          if (parts.length >= 2) {
+            geomLat = parseFloat(parts[0]);
+            geomLon = parseFloat(parts[1]);
+          }
+        }
 
-        const dist = (geomLat && geomLon) ? this.haversineKm(lat, lon, geomLat, geomLon) : 99999;
+        if (!geomLat || !geomLon) {
+          const latTag = getTag('geo:lat') || getTag('latitude') || getTag('gdacs:latitude');
+          const lonTag = getTag('geo:long') || getTag('geo:lon') || getTag('longitude') || getTag('gdacs:longitude');
+          if (latTag && lonTag) {
+            geomLat = parseFloat(latTag);
+            geomLon = parseFloat(lonTag);
+          }
+        }
 
-        // Centralized configurable relevance radius (400 km for local disasters, 600 km for major storms/cyclones)
+        const hasCoords = !isNaN(geomLat) && !isNaN(geomLon) && (geomLat !== 0 || geomLon !== 0);
+        if (hasCoords) {
+          withCoords++;
+        }
+
+        const dist = hasCoords ? this.haversineKm(lat, lon, geomLat, geomLon) : 99999;
         const DEFAULT_DISASTER_RADIUS_KM = 400;
         const lowerTitle = title.toLowerCase();
         const isMajorStorm = lowerTitle.includes('cyclone') || lowerTitle.includes('storm') || lowerTitle.includes('typhoon') || lowerTitle.includes('hurricane');
         const maxRadius = isMajorStorm ? 600 : DEFAULT_DISASTER_RADIUS_KM;
 
-        const included = dist <= maxRadius;
-        console.log(`[GDACS Filtering]: event="${title.substring(0, 30)}...", eventLat=${geomLat}, eventLon=${geomLon}, targetLat=${lat}, targetLon=${lon}, distance=${Math.round(dist)}km, maxRadius=${maxRadius}km, included=${included}`);
+        const included = hasCoords && (dist <= maxRadius);
+        if (included) {
+          withinRadius++;
+        }
+
+        console.log(`[GDACS Event Detail]: event="${title.substring(0, 35)}...", eventLat=${geomLat}, eventLon=${geomLon}, targetLat=${lat}, targetLon=${lon}, distance=${Math.round(dist)}km, maxRadius=${maxRadius}km, included=${included}`);
 
         if (included) {
           let severity: AlertSeverity = 'MODERATE';
@@ -52,8 +84,8 @@ export class CityAlertsService {
             description: description || 'GDACS disaster event reported within regional relevance radius.',
             category: 'DISASTER',
             severity,
-            latitude: geomLat || undefined,
-            longitude: geomLon || undefined,
+            latitude: geomLat,
+            longitude: geomLon,
             issuedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
             sourceName: 'GDACS',
             sourceUrl: link || 'https://www.gdacs.org',
@@ -62,21 +94,29 @@ export class CityAlertsService {
           });
         }
       }
-      return alerts;
+
+      console.log(`[GDACS]: status=OK, rawCount=${rawCount}, withCoords=${withCoords}, withinRadius=${withinRadius}, finalAlertCount=${alerts.length}`);
+      return { alerts, rawCount, withCoords, withinRadius };
     } catch (e: any) {
-      console.warn('[CityAlertsService GDACS Error]:', e.message);
-      return [];
+      console.warn('[GDACS Error]:', e.message);
+      return { alerts: [], rawCount: 0, withCoords: 0, withinRadius: 0 };
     }
   }
 
-  private async fetchOpenMeteoAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+  private async fetchOpenMeteoAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], requestSuccessful: boolean, weatherDataReceived: boolean }> {
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m`;
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) return [];
+      if (!res.ok) {
+        console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=false, status=${res.status}`);
+        return { alerts: [], requestSuccessful: false, weatherDataReceived: false };
+      }
       const json: any = await res.json();
       const current = json.current;
-      if (!current) return [];
+      if (!current) {
+        console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=true, weatherDataReceived=false`);
+        return { alerts: [], requestSuccessful: true, weatherDataReceived: false };
+      }
 
       const alerts: CityAlert[] = [];
       const temp = current.temperature_2m;
@@ -134,28 +174,35 @@ export class CityAlertsService {
         });
       }
 
-      return alerts;
+      console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=true, weatherDataReceived=true, weatherAlertCount=${alerts.length}`);
+      return { alerts, requestSuccessful: true, weatherDataReceived: true };
     } catch (e: any) {
-      console.warn('[CityAlertsService Open-Meteo Error]:', e.message);
-      return [];
+      console.warn('[Open-Meteo Error]:', e.message);
+      console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=false, weatherDataReceived=false`);
+      return { alerts: [], requestSuccessful: false, weatherDataReceived: false };
     }
   }
 
-  private async fetchAqiAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+  private async fetchAqiAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], providerStatus: string, aqi: number | null }> {
     try {
       const aqiRes: any = await railwayProviderService.getAqi(lat.toString(), lon.toString());
-      if (aqiRes && aqiRes.status === 'OK' && typeof aqiRes.aqi === 'number') {
-        const aqi = aqiRes.aqi;
-        if (aqi > 100) {
-          let severity: AlertSeverity = 'MODERATE';
-          if (aqi > 300) severity = 'CRITICAL';
-          else if (aqi > 200) severity = 'HIGH';
-          else if (aqi > 150) severity = 'MODERATE';
+      const providerStatus = aqiRes?.status || 'UNKNOWN';
+      const aqi = typeof aqiRes?.aqi === 'number' ? aqiRes.aqi : null;
 
-          return [{
+      console.log(`[AQICN]: lat=${lat}, lon=${lon}, providerStatus=${providerStatus}, aqi=${aqi}`);
+
+      if (aqiRes && aqiRes.status === 'OK' && typeof aqiRes.aqi === 'number') {
+        const val = aqiRes.aqi;
+        if (val > 100) {
+          let severity: AlertSeverity = 'MODERATE';
+          if (val > 300) severity = 'CRITICAL';
+          else if (val > 200) severity = 'HIGH';
+          else if (val > 150) severity = 'MODERATE';
+
+          const alertItem: CityAlert = {
             id: `aqi_alert_${Date.now()}`,
             title: `Air Quality Alert: ${aqiRes.category || 'Unhealthy'}`,
-            description: `Air Quality Index is ${aqi} (${aqiRes.category}). Dominant pollutant: ${aqiRes.dominantPollutant || 'PM2.5'}. ${aqi > 200 ? 'Sensitive groups and general public should avoid outdoor exposure.' : 'Sensitive individuals should limit prolonged outdoor exertion.'}`,
+            description: `Air Quality Index is ${val} (${aqiRes.category}). Dominant pollutant: ${aqiRes.dominantPollutant || 'PM2.5'}. ${val > 200 ? 'Sensitive groups and general public should avoid outdoor exposure.' : 'Sensitive individuals should limit prolonged outdoor exertion.'}`,
             category: 'AIR_QUALITY',
             severity,
             city: aqiRes.stationName || undefined,
@@ -166,13 +213,14 @@ export class CityAlertsService {
             sourceUrl: 'https://aqicn.org',
             status: 'ACTIVE',
             isVerified: true
-          }];
+          };
+          return { alerts: [alertItem], providerStatus, aqi: val };
         }
       }
-      return [];
+      return { alerts: [], providerStatus, aqi };
     } catch (e: any) {
-      console.warn('[CityAlertsService AQICN Error]:', e.message);
-      return [];
+      console.warn('[AQICN Error]:', e.message);
+      return { alerts: [], providerStatus: 'ERROR', aqi: null };
     }
   }
 
@@ -198,15 +246,17 @@ export class CityAlertsService {
     const targetLat = lat ?? 25.6022;
     const targetLon = lon ?? 85.1376;
 
-    console.log(`[CITY_ALERTS_REQUEST]: lat=${targetLat}, lon=${targetLon}, city=${city || 'none'}, district=${district || 'none'}, category=${category || 'all'}`);
+    console.log(`[CityAlerts TEST]: location=${city || 'Madhuban / Patna'}, lat=${targetLat}, lon=${targetLon}, category=${category || 'ALL'}`);
 
-    const [gdacsAlerts, meteoAlerts, aqiAlerts] = await Promise.all([
+    const [gdacsResult, meteoResult, aqiResult] = await Promise.all([
       this.fetchGdacsAlerts(targetLat, targetLon),
       this.fetchOpenMeteoAlerts(targetLat, targetLon),
       this.fetchAqiAlerts(targetLat, targetLon)
     ]);
 
-    let allAlerts = [...gdacsAlerts, ...meteoAlerts, ...aqiAlerts];
+    let allAlerts = [...gdacsResult.alerts, ...meteoResult.alerts, ...aqiResult.alerts];
+
+    console.log(`[CityAlerts Summary]: totalAlerts=${allAlerts.length} (GDACS: ${gdacsResult.alerts.length}, Open-Meteo: ${meteoResult.alerts.length}, AQICN: ${aqiResult.alerts.length})`);
 
     if (category) {
       const upperCat = category.toUpperCase();
