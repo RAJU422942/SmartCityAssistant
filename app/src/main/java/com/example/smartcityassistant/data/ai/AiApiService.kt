@@ -10,7 +10,7 @@ import retrofit2.http.POST
 import java.util.concurrent.TimeUnit
 
 interface AiApiService {
-    @POST("api/v1/ai/chat")
+    @POST("/api/v1/ai/chat")
     suspend fun chat(
         @Body request: AiChatRequest
     ): AiChatResponse
