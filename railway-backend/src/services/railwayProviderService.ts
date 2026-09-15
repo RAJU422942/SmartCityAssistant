@@ -407,7 +407,7 @@ export class RailwayProviderService {
       }
 
       const json: any = await res.json();
-      const records = json?.records;
+      const records = json?.records || json?.data || json?.results || (Array.isArray(json) ? json : null);
       if (!Array.isArray(records) || records.length === 0) {
         return {
           status: 'NO_NEARBY_AQI_STATION',
@@ -432,13 +432,14 @@ export class RailwayProviderService {
       }
 
       // Log first record fields to verify CPCB structure in logs
+      console.log('[CPCB Sample Record Keys]:', Object.keys(records[0]));
       console.log('[CPCB Sample Record]:', JSON.stringify(records[0]));
 
       // Group records by station key (station name + lat + lon)
       const stationMap = new Map<string, any>();
 
       for (const rec of records) {
-        const stationName = rec.station || rec.city || 'Unknown Station';
+        const stationName = rec.station || rec.city || rec.location || 'Unknown Station';
         const latitude = parseFloat(rec.latitude ?? rec.lat ?? rec.lat_value ?? rec.y ?? 'NaN');
         const longitude = parseFloat(rec.longitude ?? rec.lng ?? rec.lon ?? rec.long ?? rec.x ?? 'NaN');
         if (isNaN(latitude) || isNaN(longitude)) continue;
@@ -457,8 +458,8 @@ export class RailwayProviderService {
         }
 
         const stationObj = stationMap.get(key);
-        const polId = (rec.pollutant_id || '').toLowerCase();
-        const polVal = parseFloat(rec.pollutant_avg ?? rec.pollutant_max ?? rec.aqi ?? '0');
+        const polId = (rec.pollutant_id || rec.pollutant || '').toLowerCase();
+        const polVal = parseFloat(rec.pollutant_avg ?? rec.pollutant_max ?? rec.aqi ?? rec.value ?? '0');
         if (!isNaN(polVal)) {
           stationObj.pollutants[polId] = polVal;
           if (polId === 'aqi' || polId === 'overall_aqi') {
