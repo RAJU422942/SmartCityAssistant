@@ -54,6 +54,11 @@ function getStringField(rec: any, ...keys: string[]): string | undefined {
 }
 
 export class RailwayProviderService {
+  private cachedRecords: any[] | null = null;
+  private cacheTimestamp: number = 0;
+  private activeFetchPromise: Promise<any[] | null> | null = null;
+  private CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes cache
+
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
     if (!rawKey) return undefined;
@@ -372,11 +377,69 @@ export class RailwayProviderService {
     }
   }
 
+  private async fetchCpcbRecords(apiKey: string): Promise<any[] | null> {
+    const now = Date.now();
+    if (this.cachedRecords && (now - this.cacheTimestamp < this.CACHE_DURATION_MS)) {
+      console.log(`[CPCB Cache]: Returning server-side cached records (age: ${Math.round((now - this.cacheTimestamp) / 1000)}s)`);
+      return this.cachedRecords;
+    }
+
+    if (this.activeFetchPromise) {
+      console.log(`[CPCB Cache]: Reusing active in-flight fetch promise for CPCB records.`);
+      return this.activeFetchPromise;
+    }
+
+    this.activeFetchPromise = (async () => {
+      try {
+        const resourceId = '3b01bcb8-0b14-4abf-b1f2-8ec91b205104';
+        const url = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
+        console.log(`[CPCB API URL]: https://api.data.gov.in/resource/${resourceId}?api-key=REDACTED&format=json&limit=1000`);
+
+        const res = await this.fetchWithTimeout(url);
+        console.log(`[CPCB HTTP Status]: ${res.status} ${res.statusText}`);
+
+        if (res.status === 429) {
+          console.warn(`[CPCB Rate Limit]: HTTP 429 Too Many Requests received from data.gov.in.`);
+          if (this.cachedRecords) {
+            console.log(`[CPCB Fallback]: Falling back to previously cached CPCB records due to HTTP 429.`);
+            return this.cachedRecords;
+          }
+        }
+
+        if (!res.ok) {
+          if (this.cachedRecords) {
+            console.log(`[CPCB Fallback]: Falling back to previously cached CPCB records due to HTTP ${res.status}`);
+            return this.cachedRecords;
+          }
+          return null;
+        }
+
+        const json: any = await res.json();
+        const records = json?.records || json?.data || json?.results || (Array.isArray(json) ? json : null);
+        if (Array.isArray(records) && records.length > 0) {
+          this.cachedRecords = records;
+          this.cacheTimestamp = Date.now();
+          console.log(`[CPCB Cache]: Successfully fetched and cached ${records.length} records.`);
+          return records;
+        }
+
+        return this.cachedRecords;
+      } catch (err: any) {
+        console.error('[CPCB Fetch Error]:', err.message);
+        return this.cachedRecords;
+      } finally {
+        this.activeFetchPromise = null;
+      }
+    })();
+
+    return this.activeFetchPromise;
+  }
+
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const apiKey = this.getCpcbKey();
     const userLat = parseFloat(lat);
     const userLon = parseFloat(lon);
-    console.log(`[CPCB AQI Diagnostic]: requested lat: ${lat}, lon: ${lon}`);
+    console.log(`[CPCB AQI]: API key exists: ${!!apiKey}, requested lat: ${lat}, lon: ${lon}`);
 
     if (!apiKey) {
       return {
@@ -402,43 +465,8 @@ export class RailwayProviderService {
     }
 
     try {
-      const resourceId = '3b01bcb8-0b14-4abf-b1f2-8ec91b205104';
-      const maskedUrl = `https://api.data.gov.in/resource/${resourceId}?api-key=REDACTED&format=json&limit=1000`;
-      const realUrl = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
-      console.log(`[CPCB API URL]: ${maskedUrl}`);
-
-      const res = await this.fetchWithTimeout(realUrl);
-      console.log(`[CPCB HTTP Status]: ${res.status} ${res.statusText}`);
-
-      if (!res.ok) {
-        return {
-          status: 'UNAVAILABLE',
-          message: `CPCB AQI data service returned HTTP ${res.status}.`,
-          aqi: null,
-          category: null,
-          dominantPollutant: null,
-          stationName: null,
-          stationLatitude: null,
-          stationLongitude: null,
-          distanceKm: null,
-          pm25: null,
-          pm10: null,
-          co: null,
-          no2: null,
-          o3: null,
-          so2: null,
-          nh3: null,
-          timeString: null,
-          source: 'CPCB'
-        };
-      }
-
-      const json: any = await res.json();
-      console.log(`[CPCB Top-Level JSON Keys]:`, Object.keys(json || {}));
-
-      const records = json?.records || json?.data || json?.results || (Array.isArray(json) ? json : null);
+      const records = await this.fetchCpcbRecords(apiKey);
       if (!Array.isArray(records) || records.length === 0) {
-        console.warn(`[CPCB Warning]: No records array found in JSON response.`);
         return {
           status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
@@ -456,21 +484,13 @@ export class RailwayProviderService {
           so2: null,
           nh3: null,
           timeString: null,
-          message: 'No CPCB air quality monitoring stations found.',
+          message: 'No CPCB air quality monitoring stations found (Rate limit or unavailable).',
           source: 'CPCB'
         };
       }
 
-      console.log(`[CPCB Records Count]: ${records.length}`);
-      if (records.length > 0) {
-        console.log('[CPCB Sample Record 1]:', JSON.stringify(records[0]));
-        if (records.length > 1) console.log('[CPCB Sample Record 2]:', JSON.stringify(records[1]));
-        if (records.length > 2) console.log('[CPCB Sample Record 3]:', JSON.stringify(records[2]));
-      }
-
       // Group records by station key (station name + lat + lon)
       const stationMap = new Map<string, any>();
-      let parsedCount = 0;
 
       for (const rec of records) {
         const stationName = getStringField(rec, 'station', 'station_name', 'location', 'city') || 'Unknown Station';
@@ -478,7 +498,6 @@ export class RailwayProviderService {
         const longitude = getNumericField(rec, 'longitude', 'lng', 'lon', 'long', 'x', 'coordinate_long');
         if (isNaN(latitude) || isNaN(longitude)) continue;
 
-        parsedCount++;
         const key = `${stationName}_${latitude}_${longitude}`;
         if (!stationMap.has(key)) {
           stationMap.set(key, {
@@ -505,8 +524,6 @@ export class RailwayProviderService {
         }
       }
 
-      console.log(`[CPCB Parsed Stations Count with valid coordinates]: ${parsedCount} records, unique stations: ${stationMap.size}`);
-
       if (stationMap.size === 0) {
         return {
           status: 'NO_NEARBY_AQI_STATION',
@@ -530,25 +547,22 @@ export class RailwayProviderService {
         };
       }
 
-      // Compute distances and find nearest stations
-      const stationsList: any[] = [];
+      // Find nearest station to userLat, userLon
+      let nearestStation: any = null;
+      let minDistance = Infinity;
+
       for (const station of stationMap.values()) {
         const dist = haversineKm(userLat, userLon, station.latitude, station.longitude);
-        stationsList.push({ ...station, distanceKm: Math.round(dist * 10) / 10 });
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestStation = station;
+        }
       }
 
-      stationsList.sort((a, b) => a.distanceKm - b.distanceKm);
-
-      console.log(`[CPCB Nearest 10 Stations to (${userLat}, ${userLon})]:`);
-      stationsList.slice(0, 10).forEach((s, idx) => {
-        console.log(`  ${idx + 1}. Station: "${s.stationName}" (City: ${s.city}), Lat: ${s.latitude}, Lon: ${s.longitude}, Distance: ${s.distanceKm} km, AQI: ${s.aqi}`);
-      });
-
-      const nearestStation = stationsList[0];
-      const roundedDistance = nearestStation.distanceKm;
+      const roundedDistance = Math.round(minDistance * 10) / 10;
+      console.log(`[CPCB Nearest Station]: found="${nearestStation.stationName}" at dist=${roundedDistance} km (threshold=${MAX_AQI_STATION_DISTANCE_KM} km)`);
 
       if (roundedDistance > MAX_AQI_STATION_DISTANCE_KM) {
-        console.log(`[CPCB Rejection]: Nearest station "${nearestStation.stationName}" at ${roundedDistance} km exceeds MAX_AQI_STATION_DISTANCE_KM (${MAX_AQI_STATION_DISTANCE_KM} km).`);
         return {
           status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
