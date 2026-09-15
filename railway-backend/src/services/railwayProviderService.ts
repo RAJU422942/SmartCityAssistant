@@ -7,48 +7,6 @@ import {
   UnavailableResponse
 } from '../models/railwayModels';
 
-interface FallbackCity {
-  name: string;
-  lat: number;
-  lon: number;
-}
-
-const FALLBACK_CITIES: FallbackCity[] = [
-  { name: 'Mehsana / Ahmedabad (Gujarat)', lat: 23.0225, lon: 72.5714 },
-  { name: 'Patna (Bihar)', lat: 25.6022, lon: 85.1376 },
-  { name: 'Delhi / NCR', lat: 28.6139, lon: 77.2090 },
-  { name: 'Chennai (Tamil Nadu)', lat: 13.0827, lon: 80.2707 },
-  { name: 'Mumbai (Maharashtra)', lat: 19.0760, lon: 72.8777 },
-  { name: 'Kolkata (West Bengal)', lat: 22.5726, lon: 88.3639 },
-  { name: 'Bengaluru (Karnataka)', lat: 12.9716, lon: 77.5946 },
-  { name: 'Hyderabad (Telangana)', lat: 17.3850, lon: 78.4867 }
-];
-
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth radius in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function nearestFallbackCity(lat: number, lon: number): FallbackCity {
-  let nearest = FALLBACK_CITIES[0];
-  let minDist = haversineKm(lat, lon, nearest.lat, nearest.lon);
-  for (let i = 1; i < FALLBACK_CITIES.length; i++) {
-    const dist = haversineKm(lat, lon, FALLBACK_CITIES[i].lat, FALLBACK_CITIES[i].lon);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = FALLBACK_CITIES[i];
-    }
-  }
-  return nearest;
-}
-
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
@@ -368,9 +326,9 @@ export class RailwayProviderService {
     }
   }
 
-  async getAqi(lat: string, lon: string, city?: string): Promise<BackendAqiResponse | UnavailableResponse> {
+  async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const aqiKey = this.getAqiKey();
-    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, sanitized length: ${aqiKey?.length || 0}, city: ${city || 'none'}`);
+    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, requested lat: ${lat}, lon: ${lon}`);
 
     if (!aqiKey) {
       return {
@@ -380,52 +338,31 @@ export class RailwayProviderService {
     }
 
     try {
-      let json: any = null;
-      let res: Response | null = null;
+      const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
+      const res = await this.fetchWithTimeout(url);
 
-      // 1. If city name is explicitly provided from manual search, try city feed first
-      if (city && city.trim().length > 0) {
-        const cityName = city.split(',')[0].trim();
-        const url = `https://api.waqi.info/feed/${encodeURIComponent(cityName)}/?token=${aqiKey}`;
-        res = await this.fetchWithTimeout(url);
-        if (res.ok) {
-          json = await res.json();
-        }
+      if (!res.ok) {
+        return { status: 'UNAVAILABLE', message: 'Air quality data is not available for your current location.' };
       }
 
-      // 2. Try exact coordinate geo feed if no city or city feed failed
-      if (!json || json.status !== 'ok' || !json.data) {
-        const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
-        res = await this.fetchWithTimeout(url);
-        if (res.ok) {
-          json = await res.json();
-        }
+      const json = await res.json();
+
+      if (json?.status === 'error' && json?.data === 'Invalid key') {
+        return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
       }
 
-      // 3. Fallback to nearest coordinate city feed
-      if (!json || json.status !== 'ok' || !json.data) {
-        const latNum = parseFloat(lat);
-        const lonNum = parseFloat(lon);
-        const nearest = nearestFallbackCity(latNum, lonNum);
-        const url = `https://api.waqi.info/feed/geo:${nearest.lat};${nearest.lon}/?token=${aqiKey}`;
-        res = await this.fetchWithTimeout(url);
-        if (res.ok) {
-          json = await res.json();
-        }
-      }
-
-      if (!res || !res.ok || json?.status !== 'ok' || !json?.data) {
-        if (json?.status === 'error' && json?.data === 'Invalid key') {
-          return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
-        }
-        return { status: 'UNAVAILABLE', message: 'AQI data not found for location' };
+      if (json?.status !== 'ok' || !json?.data) {
+        return { status: 'UNAVAILABLE', message: 'Air quality data is not available for your current location.' };
       }
 
       const d = json.data;
       const aqiVal = typeof d.aqi === 'number' ? d.aqi : 0;
       const domPol = d.dominentpol || null;
       const station = d.city?.name || null;
+      const stationCoords = d.city?.geo || null;
       const iaqi = d.iaqi || {};
+
+      console.log(`[AQI Success]: requestedLat=${lat}, requestedLon=${lon}, station=${station}, stationCoords=${JSON.stringify(stationCoords)}, aqi=${aqiVal}`);
 
       let cat = 'GOOD';
       if (aqiVal <= 50) cat = 'GOOD';
