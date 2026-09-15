@@ -71,6 +71,12 @@ export class RailwayProviderService {
     return rawKey.trim().replace(/^["']|["']$/g, '');
   }
 
+  private getMapsKey(): string | undefined {
+    const rawKey = process.env.GOOGLE_MAPS_API_KEY || process.env.MAPS_API_KEY;
+    if (!rawKey) return undefined;
+    return rawKey.trim().replace(/^["']|["']$/g, '');
+  }
+
   private getBaseUrl(): string {
     return process.env.RAILKIT_API_BASE_URL || 'https://api.railkit.io/v1';
   }
@@ -398,7 +404,9 @@ export class RailwayProviderService {
     this.activeFetchPromise = (async () => {
       try {
         const resourceId = '3b01bcb8-0b14-4abf-b1f2-8ec91b205104';
+        const url = `https://api.data.gov.in/resource/${resourceId}?api-key=REDACTED&format=json&limit=1000`;
         const realUrl = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
+        console.log(`[CPCB API URL]: ${url}`);
 
         const res = await this.fetchWithTimeout(realUrl);
         console.log(`[CPCB FETCH] HTTP status = ${res.status} ${res.statusText}`);
@@ -426,7 +434,6 @@ export class RailwayProviderService {
         console.log(`[CPCB FETCH] records received = ${Array.isArray(records) ? records.length : 0}`);
 
         if (Array.isArray(records) && records.length > 0) {
-          // STEP 5: Never cache empty or invalid records
           this.cachedRecords = records;
           this.cacheTimestamp = Date.now();
           console.log(`[CPCB Cache]: Successfully fetched and cached ${records.length} records.`);
@@ -659,6 +666,102 @@ export class RailwayProviderService {
       };
       console.log(`[RESPONSE] requestId=${requestId} final status=${errResp.status}`);
       return errResp;
+    }
+  }
+
+  async getParking(lat: string, lon: string): Promise<any> {
+    const mapsKey = this.getMapsKey();
+    const userLat = parseFloat(lat);
+    const userLon = parseFloat(lon);
+
+    if (!mapsKey) {
+      return { status: 'ERROR', results: [], message: 'Google Maps API key is not configured on backend.' };
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=5000&type=parking&key=${mapsKey}`;
+      const res = await this.fetchWithTimeout(url);
+      if (!res.ok) {
+        return { status: 'ERROR', results: [], message: 'Failed to fetch parking locations.' };
+      }
+
+      const data: any = await res.json();
+      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        return { status: 'ERROR', results: [], message: data.error_message || 'Places API error' };
+      }
+
+      if (!data.results || data.results.length === 0) {
+        return { status: 'NO_RESULTS', results: [] };
+      }
+
+      const results = data.results.map((p: any) => {
+        const pLat = p.geometry?.location?.lat ?? userLat;
+        const pLon = p.geometry?.location?.lng ?? userLon;
+        const dist = haversineKm(userLat, userLon, pLat, pLon);
+        const isOpen = p.opening_hours?.open_now;
+        return {
+          name: p.name || 'Parking Area',
+          address: p.vicinity || p.formatted_address || 'Nearby',
+          latitude: pLat,
+          longitude: pLon,
+          distanceKm: Math.round(dist * 10) / 10,
+          status: isOpen === true ? 'Open' : (isOpen === false ? 'Closed' : 'Available'),
+          source: 'Google Places'
+        };
+      });
+
+      results.sort((a: any, b: any) => a.distanceKm - b.distanceKm);
+      return { status: 'OK', results };
+    } catch (e: any) {
+      return { status: 'ERROR', results: [], message: e.message || 'Error fetching parking' };
+    }
+  }
+
+  async getEvCharging(lat: string, lon: string): Promise<any> {
+    const mapsKey = this.getMapsKey();
+    const userLat = parseFloat(lat);
+    const userLon = parseFloat(lon);
+
+    if (!mapsKey) {
+      return { status: 'ERROR', results: [], message: 'Google Maps API key is not configured on backend.' };
+    }
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=5000&keyword=ev%20charging%20station&key=${mapsKey}`;
+      const res = await this.fetchWithTimeout(url);
+      if (!res.ok) {
+        return { status: 'ERROR', results: [], message: 'Failed to fetch EV charging stations.' };
+      }
+
+      const data: any = await res.json();
+      if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+        return { status: 'ERROR', results: [], message: data.error_message || 'Places API error' };
+      }
+
+      if (!data.results || data.results.length === 0) {
+        return { status: 'NO_RESULTS', results: [] };
+      }
+
+      const results = data.results.map((p: any) => {
+        const pLat = p.geometry?.location?.lat ?? userLat;
+        const pLon = p.geometry?.location?.lng ?? userLon;
+        const dist = haversineKm(userLat, userLon, pLat, pLon);
+        const isOpen = p.opening_hours?.open_now;
+        return {
+          name: p.name || 'EV Charging Station',
+          address: p.vicinity || p.formatted_address || 'Nearby',
+          latitude: pLat,
+          longitude: pLon,
+          distanceKm: Math.round(dist * 10) / 10,
+          status: isOpen === true ? 'Open' : (isOpen === false ? 'Closed' : 'Available'),
+          source: 'Google Places'
+        };
+      });
+
+      results.sort((a: any, b: any) => a.distanceKm - b.distanceKm);
+      return { status: 'OK', results };
+    } catch (e: any) {
+      return { status: 'ERROR', results: [], message: e.message || 'Error fetching EV charging' };
     }
   }
 }

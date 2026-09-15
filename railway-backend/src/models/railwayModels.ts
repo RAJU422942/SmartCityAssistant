@@ -67,6 +67,22 @@ export interface BackendAqiResponse {
   source?: string | null;
 }
 
+export interface TransportPoiItem {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
+  status?: string;
+  source?: string;
+}
+
+export interface TransportPoiResponse {
+  status: string;
+  results: TransportPoiItem[];
+  message?: string;
+}
+
 export interface UnavailableResponse {
   status: string;
   message: string;

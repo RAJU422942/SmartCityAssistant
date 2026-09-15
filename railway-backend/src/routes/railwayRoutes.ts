@@ -11,5 +11,7 @@ router.get('/trains/between/:from/:to', railwayController.getTrainsBetween);
 router.get('/stations/search', railwayController.searchStations);
 router.get('/trains/search', railwayController.searchTrains);
 router.get('/aqi', railwayController.getAqi);
+router.get('/parking', railwayController.getParking);
+router.get('/ev-charging', railwayController.getEvCharging);
 
 export default router;

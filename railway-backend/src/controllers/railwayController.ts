@@ -115,6 +115,32 @@ export class RailwayController {
       next(error);
     }
   }
+
+  async getParking(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { lat, lon } = req.query;
+      if (!lat || !lon) {
+        return res.status(400).json({ status: 'ERROR', message: 'Latitude and longitude are required' });
+      }
+      const result = await railwayProviderService.getParking(lat as string, lon as string);
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getEvCharging(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { lat, lon } = req.query;
+      if (!lat || !lon) {
+        return res.status(400).json({ status: 'ERROR', message: 'Latitude and longitude are required' });
+      }
+      const result = await railwayProviderService.getEvCharging(lat as string, lon as string);
+      return res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const railwayController = new RailwayController();
