@@ -1,33 +1,27 @@
-package com.example.smartcityassistant.aqi
+package com.example.smartcityassistant.data.ai
 
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.GET
-import retrofit2.http.Query
+import retrofit2.http.Body
+import retrofit2.http.POST
 import java.util.concurrent.TimeUnit
 
-interface AqiApiService {
-    @GET("api/v1/railway/aqi")
-    suspend fun getAqi(
-        @Query("lat") lat: Double,
-        @Query("lon") lon: Double,
-    ): AqiResponseDto
+interface AiApiService {
+    @POST("api/v1/ai/chat")
+    suspend fun chat(
+        @Body request: AiChatRequest
+    ): AiChatResponse
 }
 
-object AqiClient {
+object AiApiClient {
     private const val BASE_URL = "https://smart-city-assistant-railway-backend.onrender.com/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        // Set to NONE for release builds if you don't want response bodies in Logcat.
         level = HttpLoggingInterceptor.Level.BODY
     }
 
-    // IMPORTANT: Render's free tier spins the backend down after ~15 min of inactivity
-    // and can take 50+ seconds to wake back up on the next request. The default OkHttp
-    // timeouts (10s each for connect/read/write) were causing every "cold" request to
-    // fail with a SocketTimeoutException before the server even had a chance to respond.
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -36,12 +30,12 @@ object AqiClient {
         .addInterceptor(loggingInterceptor)
         .build()
 
-    val service: AqiApiService by lazy {
+    val service: AiApiService by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(AqiApiService::class.java)
+            .create(AiApiService::class.java)
     }
 }

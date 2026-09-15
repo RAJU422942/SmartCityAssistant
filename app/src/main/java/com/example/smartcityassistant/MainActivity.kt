@@ -2,6 +2,20 @@ package com.example.smartcityassistant
 
 import com.example.smartcityassistant.railway.*
 import com.example.smartcityassistant.aqi.*
+import com.example.smartcityassistant.ui.profile.*
+import com.example.smartcityassistant.ui.explore.*
+import com.example.smartcityassistant.ui.cityalerts.*
+import com.example.smartcityassistant.ui.government.*
+import com.example.smartcityassistant.ui.government.schemes.*
+import com.example.smartcityassistant.ui.government.benefits.*
+import com.example.smartcityassistant.ui.government.offices.*
+import com.example.smartcityassistant.ui.government.services.*
+import com.example.smartcityassistant.ui.government.notices.*
+import com.example.smartcityassistant.ui.government.helplines.*
+import com.example.smartcityassistant.ui.documents.*
+import com.example.smartcityassistant.util.*
+import com.example.smartcityassistant.ui.emergency.*
+import com.example.smartcityassistant.ui.ai.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 import android.Manifest
@@ -82,6 +96,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -246,6 +261,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun mapActionToRoute(action: String?): String? {
+    return when (action) {
+        "OPEN_EMERGENCY" -> "emergency"
+        "OPEN_AQI" -> "aqi_details"
+        "OPEN_NEARBY" -> "nearby"
+        "OPEN_TRANSPORT" -> "transport"
+        "OPEN_RAILWAY" -> "transport_railway"
+        "OPEN_GOVERNMENT" -> "government"
+        "OPEN_SCHEMES" -> "government_schemes"
+        "OPEN_REPORT_PROBLEM" -> "report"
+        "OPEN_MY_COMPLAINTS" -> "complaints"
+        "OPEN_CITY_ALERTS" -> "city_alerts"
+        else -> null
+    }
+}
+
 @Composable
 fun MainNavigation() {
     var currentScreen by rememberSaveable { mutableStateOf("home") }
@@ -309,7 +340,7 @@ fun MainNavigation() {
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
                 "home" -> SmartCityHomeScreen { currentScreen = it }
-                "emergency" -> EmergencyNearbyScreen { currentScreen = "home" }
+                "emergency" -> EmergencyCenterScreen { currentScreen = "home" }
                 "report" -> ReportProblemScreen(
                     onBack = { currentScreen = "home" },
                     onSuccess = { report ->
@@ -418,9 +449,41 @@ fun MainNavigation() {
                         ReportDetailsScreen(report = report, onBack = { currentScreen = "complaints" })
                     }
                 }
-                "ai_assistant" -> AIAssistantScreen { currentScreen = "home" }
-                "explore" -> ExplorePlaceholder { currentScreen = "home" }
-                "profile" -> ProfilePlaceholder { currentScreen = "home" }
+                "ai_assistant" -> AiAssistantScreen(
+                    onBack = { currentScreen = "home" },
+                    onNavigateAction = { action, _ ->
+                        mapActionToRoute(action)?.let { route ->
+                            currentScreen = route
+                        }
+                    }
+                )
+                "explore" -> {
+                    val exploreViewModel: ExploreViewModel = viewModel()
+                    ExploreScreen(viewModel = exploreViewModel, onNavigate = { route -> currentScreen = route })
+                }
+                "profile" -> {
+                    val profileViewModel: ProfileViewModel = viewModel()
+                    ProfileScreen(viewModel = profileViewModel, onBack = { currentScreen = "home" })
+                }
+                "city_alerts" -> {
+                    val cityAlertsViewModel: CityAlertsViewModel = viewModel()
+                    CityAlertsScreen(viewModel = cityAlertsViewModel) { currentScreen = "home" }
+                }
+                "government" -> GovernmentScreen(onNavigate = { route -> currentScreen = route }, onBack = { currentScreen = "home" })
+                "my_documents" -> {
+                    val docViewModel: DocumentViewModel = viewModel()
+                    MyDocumentsScreen(viewModel = docViewModel, onNavigateAdd = { currentScreen = "add_document" }, onBack = { currentScreen = "government" })
+                }
+                "add_document" -> {
+                    val docViewModel: DocumentViewModel = viewModel()
+                    AddDocumentScreen(viewModel = docViewModel, onBack = { currentScreen = "my_documents" })
+                }
+                "government_schemes" -> GovernmentSchemesScreen { currentScreen = "government" }
+                "welfare_benefits" -> WelfareBenefitsScreen { currentScreen = "government" }
+                "government_offices" -> GovernmentOfficesScreen { currentScreen = "government" }
+                "online_services" -> OnlineServicesScreen { currentScreen = "government" }
+                "government_notices" -> GovernmentNoticesScreen { currentScreen = "government" }
+                "government_helplines" -> GovernmentHelplinesScreen { currentScreen = "government" }
                 "aqi_details" -> {
                     val aqiViewModel: AqiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
                     val aqiState by aqiViewModel.uiState.collectAsState()
@@ -431,9 +494,115 @@ fun MainNavigation() {
     }
 }
 
+@SuppressLint("MissingPermission")
 @Composable
 fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
+    val context = LocalContext.current
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
+
+    var locationText by rememberSaveable { mutableStateOf("Madhuban, Bihar") }
+    var currentLat by rememberSaveable { mutableStateOf(25.6022) }
+    var currentLon by rememberSaveable { mutableStateOf(85.1376) }
+    var isLocating by remember { mutableStateOf(false) }
+    var showSearchDialog by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    val aqiViewModel: AqiViewModel = viewModel()
+    val aqiState by aqiViewModel.uiState.collectAsState()
+
+    LaunchedEffect(currentLat, currentLon) {
+        aqiViewModel.loadAqi(currentLat, currentLon)
+    }
+
+    if (showSearchDialog) {
+        AlertDialog(
+            onDismissRequest = { showSearchDialog = false },
+            title = { Text("Search Location", fontWeight = FontWeight.Bold, color = PrimaryNavy) },
+            text = {
+                Column {
+                    Text("Enter city or location name (e.g., Ahmedabad, Patna, Delhi):", fontSize = 12.sp, color = SecondaryText)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("City / Location") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MainText,
+                            unfocusedTextColor = MainText,
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = SecondaryBlue,
+                            unfocusedBorderColor = DividerColor
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (searchQuery.isNotBlank()) {
+                            try {
+                                val geocoder = Geocoder(context, Locale.getDefault())
+                                @Suppress("DEPRECATION")
+                                val addresses = geocoder.getFromLocationName(searchQuery, 1)
+                                if (!addresses.isNullOrEmpty()) {
+                                    val addr = addresses[0]
+                                    currentLat = addr.latitude
+                                    currentLon = addr.longitude
+                                    locationText = addr.getAddressLine(0) ?: searchQuery
+                                    showSearchDialog = false
+                                    searchQuery = ""
+                                    aqiViewModel.loadAqi(currentLat, currentLon)
+                                } else {
+                                    Toast.makeText(context, "Location not found", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Location search error", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                ) {
+                    Text("SEARCH")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSearchDialog = false }) {
+                    Text("Cancel", color = SecondaryText)
+                }
+            }
+        )
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        if (perms.values.any { it }) {
+            isLocating = true
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                isLocating = false
+                loc?.let {
+                    currentLat = it.latitude
+                    currentLon = it.longitude
+                    scope.launch {
+                        val address = TransportService.getAddressFromLocation(context, it.latitude, it.longitude)
+                        locationText = address
+                        aqiViewModel.loadAqi(it.latitude, it.longitude)
+                    }
+                } ?: run {
+                    Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
+                }
+            }.addOnFailureListener {
+                isLocating = false
+                Toast.makeText(context, "Location error", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -454,25 +623,61 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
                 color = Color.White.copy(alpha = 0.2f)
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Madhuban, Bihar", color = Color.White, fontSize = 14.sp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f).clickable { showSearchDialog = true }
+                    ) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(locationText, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showSearchDialog = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Search, contentDescription = "Search Location", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        if (isLocating) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            TextButton(
+                                onClick = {
+                                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                                    if (fine == PackageManager.PERMISSION_GRANTED) {
+                                        isLocating = true
+                                        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                            isLocating = false
+                                            loc?.let {
+                                                currentLat = it.latitude
+                                                currentLon = it.longitude
+                                                scope.launch {
+                                                    locationText = TransportService.getAddressFromLocation(context, it.latitude, it.longitude)
+                                                    aqiViewModel.loadAqi(it.latitude, it.longitude)
+                                                }
+                                            } ?: run {
+                                                Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } else {
+                                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.MyLocation, contentDescription = "Current Location", tint = Color.White, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("GPS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }
 
         Column(modifier = Modifier.padding(20.dp).verticalScroll(scrollState)) {
-            val context = LocalContext.current
-            val aqiViewModel: AqiViewModel = viewModel()
-            val aqiState by aqiViewModel.uiState.collectAsState()
-
-            LaunchedEffect(Unit) {
-                aqiViewModel.loadAqi(25.6022, 85.1376)
-            }
-
             AqiCard(uiState = aqiState) {
                 onNavigate("aqi_details")
             }
@@ -498,8 +703,8 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
                 ModuleData("Report Problem", "Garbage • Road • Water", Icons.Default.Report, "report"),
                 ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport"),
                 ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby"),
-                ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "explore"),
-                ModuleData("City Alerts", "Local notifications", Icons.Default.Notifications, "explore"),
+                ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government"),
+                ModuleData("City Alerts", "Local notifications", Icons.Default.Notifications, "city_alerts"),
                 ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints"),
                 ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant")
             )
@@ -3224,12 +3429,13 @@ fun RailwayPnrScreen(onBack: () -> Unit) {
 // Screen 6: Nearby Essential Services
 @Composable
 fun NearbyEssentialServicesScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
         TopAppBar(title = "Nearby Services", onBack)
 
         Column(modifier = Modifier.padding(20.dp)) {
             Button(
-                onClick = { },
+                onClick = { GoogleMapsLauncher.openNearbySearch(context, "Nearby places") },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = MainText),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
@@ -3243,14 +3449,14 @@ fun NearbyEssentialServicesScreen(onBack: () -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
 
             val services = listOf(
-                ModuleData("Hospital", "1.2 km", Icons.Default.LocalHospital, ""),
-                ModuleData("Police Station", "1.8 km", Icons.Default.LocalPolice, ""),
-                ModuleData("Pharmacy", "500 m", Icons.Default.MedicalServices, ""),
-                ModuleData("ATM", "300 m", Icons.Default.Atm, ""),
-                ModuleData("Petrol Pump", "900 m", Icons.Default.LocalGasStation, ""),
-                ModuleData("Fire Station", "3.1 km", Icons.Default.FireTruck, ""),
-                ModuleData("Government Office", "2.5 km", Icons.Default.AccountBalance, ""),
-                ModuleData("Railway Station", "3.4 km", Icons.Default.Train, "")
+                NearbyServiceData("Hospital", "Hospitals near me", Icons.Default.LocalHospital),
+                NearbyServiceData("Police Station", "Police stations near me", Icons.Default.LocalPolice),
+                NearbyServiceData("Pharmacy", "Pharmacies near me", Icons.Default.MedicalServices),
+                NearbyServiceData("ATM", "ATMs near me", Icons.Default.Atm),
+                NearbyServiceData("Petrol Pump", "Petrol pumps near me", Icons.Default.LocalGasStation),
+                NearbyServiceData("Fire Station", "Fire stations near me", Icons.Default.FireTruck),
+                NearbyServiceData("Government Office", "Government offices near me", Icons.Default.AccountBalance),
+                NearbyServiceData("Railway Station", "Railway stations near me", Icons.Default.Train)
             )
 
             LazyVerticalGrid(
@@ -3260,80 +3466,36 @@ fun NearbyEssentialServicesScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(services) { service ->
-                    ModuleCard(service) {}
-                }
-            }
-        }
-    }
-}
-
-// Screen 7: AI Smart Assistant
-@Composable
-fun AIAssistantScreen(onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
-        TopAppBar(title = "AI Assistant", onBack)
-
-        Column(modifier = Modifier.padding(20.dp)) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = StatusBlue),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("How can I help you today?", fontWeight = FontWeight.Bold, color = PrimaryNavy)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Card(
-                modifier = Modifier.padding(start = 40.dp).fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("\"Garbage has not been collected for 3 days in my area.\"", modifier = Modifier.padding(16.dp), fontSize = 14.sp, color = MainText)
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(end = 40.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("I detected a Garbage complaint.", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                    Text("Location: Current GPS", fontSize = 12.sp, color = Color(0xFF2E7D32))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Would you like to report it?", modifier = Modifier.weight(1f), fontSize = 13.sp, color = Color(0xFF2E7D32))
-                        Button(onClick = {}, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))) {
-                            Text("REPORT", fontSize = 11.sp, color = Color.White)
-                        }
+                    NearbyServiceCard(service) {
+                        GoogleMapsLauncher.openNearbySearch(context, service.query)
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Suggestion chips
-            SuggestionChipItem("Nearest hospital?")
-            SuggestionChipItem("Police station nearby?")
-            SuggestionChipItem("How do I report a pothole?")
-            SuggestionChipItem("Find route to railway station")
         }
     }
 }
 
+data class NearbyServiceData(val title: String, val query: String, val icon: ImageVector)
+
 @Composable
-fun SuggestionChipItem(text: String) {
+fun NearbyServiceCard(service: NearbyServiceData, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(110.dp)
+            .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(24.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 13.sp, color = MainText)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(service.icon, contentDescription = "Find nearby ${service.title.lowercase()}", tint = PrimaryNavy, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(service.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MainText)
+            Text("Find on Google Maps", color = SecondaryText, fontSize = 11.sp)
         }
     }
 }

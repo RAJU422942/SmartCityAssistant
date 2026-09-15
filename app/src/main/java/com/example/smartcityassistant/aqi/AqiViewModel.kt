@@ -14,7 +14,8 @@ class AqiViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<AqiUiState> = _uiState.asStateFlow()
 
     fun loadAqi(lat: Double, lon: Double) {
-        val cached = repository.getCachedAqi()
+        // Pass lat/lon so a cached reading from a DIFFERENT location is never reused.
+        val cached = repository.getCachedAqi(lat, lon)
         if ((cached != null) && (!cached.isCached)) {
             _uiState.value = cached
             return
