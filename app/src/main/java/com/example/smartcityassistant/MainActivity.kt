@@ -281,6 +281,8 @@ fun mapActionToRoute(action: String?): String? {
 fun MainNavigation() {
     var currentScreen by rememberSaveable { mutableStateOf("home") }
     var selectedReportForDetails by remember { mutableStateOf<Report?>(null) }
+    val sharedAqiViewModel: AqiViewModel = viewModel()
+    val aqiState by sharedAqiViewModel.uiState.collectAsState()
 
     // Transport Module States
     var baseTransportLocation by remember { mutableStateOf<TransportLocation?>(null) }
@@ -339,7 +341,7 @@ fun MainNavigation() {
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
-                "home" -> SmartCityHomeScreen { currentScreen = it }
+                "home" -> SmartCityHomeScreen(aqiViewModel = sharedAqiViewModel) { currentScreen = it }
                 "emergency" -> EmergencyCenterScreen { currentScreen = "home" }
                 "report" -> ReportProblemScreen(
                     onBack = { currentScreen = "home" },
@@ -485,8 +487,6 @@ fun MainNavigation() {
                 "government_notices" -> GovernmentNoticesScreen { currentScreen = "government" }
                 "government_helplines" -> GovernmentHelplinesScreen { currentScreen = "government" }
                 "aqi_details" -> {
-                    val aqiViewModel: AqiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-                    val aqiState by aqiViewModel.uiState.collectAsState()
                     AqiDetailsScreen(state = aqiState) { currentScreen = "home" }
                 }
             }
@@ -496,7 +496,7 @@ fun MainNavigation() {
 
 @SuppressLint("MissingPermission")
 @Composable
-fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
+fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (String) -> Unit) {
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
@@ -509,7 +509,6 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
     var showSearchDialog by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
-    val aqiViewModel: AqiViewModel = viewModel()
     val aqiState by aqiViewModel.uiState.collectAsState()
 
     LaunchedEffect(currentLat, currentLon) {

@@ -35,19 +35,21 @@ class AqiRepository(context: Context) {
 
         return try {
             val cached = gson.fromJson(json, CachedAqi::class.java)
+            val resp = cached.response
+
+            // Never return or keep a persisted negative/error/non-OK state; automatically invalidate/delete it.
+            if (resp.status != "OK" || resp.aqi == null) {
+                prefs.edit {
+                    remove(KEY_AQI_DATA)
+                    remove(KEY_TIMESTAMP)
+                }
+                return null
+            }
 
             if (lat != null && lon != null) {
                 val sameLocation = abs(cached.lat - lat) < LOCATION_MATCH_THRESHOLD &&
                         abs(cached.lon - lon) < LOCATION_MATCH_THRESHOLD
                 if (!sameLocation) return null
-            }
-
-            val resp = cached.response
-            if (resp.status == "NO_NEARBY_AQI_STATION") {
-                return AqiUiState.NoNearby(resp.message ?: "No nearby air quality monitoring station was found for your current location.", resp.distanceKm)
-            }
-            if (resp.status != "OK" || resp.aqi == null) {
-                return null
             }
 
             val aqiVal = resp.aqi
@@ -74,16 +76,28 @@ class AqiRepository(context: Context) {
                 lastUpdatedText = updatedText,
             )
         } catch (_: Exception) {
+            prefs.edit {
+                remove(KEY_AQI_DATA)
+                remove(KEY_TIMESTAMP)
+            }
             null
         }
     }
 
     fun saveCache(response: AqiResponseDto, lat: Double, lon: Double) {
         try {
-            val cached = CachedAqi(response, System.currentTimeMillis(), lat, lon)
-            prefs.edit {
-                putString(KEY_AQI_DATA, gson.toJson(cached))
-                putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+            if (response.status == "OK" && response.aqi != null) {
+                val cached = CachedAqi(response, System.currentTimeMillis(), lat, lon)
+                prefs.edit {
+                    putString(KEY_AQI_DATA, gson.toJson(cached))
+                    putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+                }
+            } else {
+                // Never save NO_NEARBY_AQI_STATION, UNAVAILABLE, or error states to SharedPreferences.
+                prefs.edit {
+                    remove(KEY_AQI_DATA)
+                    remove(KEY_TIMESTAMP)
+                }
             }
         } catch (_: Exception) {
         }
