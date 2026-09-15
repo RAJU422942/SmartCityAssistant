@@ -376,7 +376,7 @@ export class RailwayProviderService {
     const apiKey = this.getCpcbKey();
     const userLat = parseFloat(lat);
     const userLon = parseFloat(lon);
-    console.log(`[CPCB AQI]: API key exists: ${!!apiKey}, requested lat: ${lat}, lon: ${lon}`);
+    console.log(`[CPCB AQI Diagnostic]: requested lat: ${lat}, lon: ${lon}`);
 
     if (!apiKey) {
       return {
@@ -403,13 +403,17 @@ export class RailwayProviderService {
 
     try {
       const resourceId = '3b01bcb8-0b14-4abf-b1f2-8ec91b205104';
-      const url = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
-      const res = await this.fetchWithTimeout(url);
+      const maskedUrl = `https://api.data.gov.in/resource/${resourceId}?api-key=REDACTED&format=json&limit=1000`;
+      const realUrl = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
+      console.log(`[CPCB API URL]: ${maskedUrl}`);
+
+      const res = await this.fetchWithTimeout(realUrl);
+      console.log(`[CPCB HTTP Status]: ${res.status} ${res.statusText}`);
 
       if (!res.ok) {
         return {
           status: 'UNAVAILABLE',
-          message: 'CPCB AQI data service is temporarily unavailable.',
+          message: `CPCB AQI data service returned HTTP ${res.status}.`,
           aqi: null,
           category: null,
           dominantPollutant: null,
@@ -430,8 +434,11 @@ export class RailwayProviderService {
       }
 
       const json: any = await res.json();
+      console.log(`[CPCB Top-Level JSON Keys]:`, Object.keys(json || {}));
+
       const records = json?.records || json?.data || json?.results || (Array.isArray(json) ? json : null);
       if (!Array.isArray(records) || records.length === 0) {
+        console.warn(`[CPCB Warning]: No records array found in JSON response.`);
         return {
           status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
@@ -454,15 +461,16 @@ export class RailwayProviderService {
         };
       }
 
-      // Log record count and sample keys to diagnose live response structure
       console.log(`[CPCB Records Count]: ${records.length}`);
       if (records.length > 0) {
-        console.log('[CPCB Sample Record Keys]:', Object.keys(records[0]));
-        console.log('[CPCB Sample Record]:', JSON.stringify(records[0]));
+        console.log('[CPCB Sample Record 1]:', JSON.stringify(records[0]));
+        if (records.length > 1) console.log('[CPCB Sample Record 2]:', JSON.stringify(records[1]));
+        if (records.length > 2) console.log('[CPCB Sample Record 3]:', JSON.stringify(records[2]));
       }
 
       // Group records by station key (station name + lat + lon)
       const stationMap = new Map<string, any>();
+      let parsedCount = 0;
 
       for (const rec of records) {
         const stationName = getStringField(rec, 'station', 'station_name', 'location', 'city') || 'Unknown Station';
@@ -470,6 +478,7 @@ export class RailwayProviderService {
         const longitude = getNumericField(rec, 'longitude', 'lng', 'lon', 'long', 'x', 'coordinate_long');
         if (isNaN(latitude) || isNaN(longitude)) continue;
 
+        parsedCount++;
         const key = `${stationName}_${latitude}_${longitude}`;
         if (!stationMap.has(key)) {
           stationMap.set(key, {
@@ -496,7 +505,7 @@ export class RailwayProviderService {
         }
       }
 
-      console.log(`[CPCB Parsed Stations Count]: ${stationMap.size}`);
+      console.log(`[CPCB Parsed Stations Count with valid coordinates]: ${parsedCount} records, unique stations: ${stationMap.size}`);
 
       if (stationMap.size === 0) {
         return {
@@ -521,22 +530,25 @@ export class RailwayProviderService {
         };
       }
 
-      // Find nearest station to userLat, userLon
-      let nearestStation: any = null;
-      let minDistance = Infinity;
-
+      // Compute distances and find nearest stations
+      const stationsList: any[] = [];
       for (const station of stationMap.values()) {
         const dist = haversineKm(userLat, userLon, station.latitude, station.longitude);
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestStation = station;
-        }
+        stationsList.push({ ...station, distanceKm: Math.round(dist * 10) / 10 });
       }
 
-      const roundedDistance = Math.round(minDistance * 10) / 10;
-      console.log(`[CPCB Nearest Station]: found="${nearestStation.stationName}" at dist=${roundedDistance} km (threshold=${MAX_AQI_STATION_DISTANCE_KM} km)`);
+      stationsList.sort((a, b) => a.distanceKm - b.distanceKm);
+
+      console.log(`[CPCB Nearest 10 Stations to (${userLat}, ${userLon})]:`);
+      stationsList.slice(0, 10).forEach((s, idx) => {
+        console.log(`  ${idx + 1}. Station: "${s.stationName}" (City: ${s.city}), Lat: ${s.latitude}, Lon: ${s.longitude}, Distance: ${s.distanceKm} km, AQI: ${s.aqi}`);
+      });
+
+      const nearestStation = stationsList[0];
+      const roundedDistance = nearestStation.distanceKm;
 
       if (roundedDistance > MAX_AQI_STATION_DISTANCE_KM) {
+        console.log(`[CPCB Rejection]: Nearest station "${nearestStation.stationName}" at ${roundedDistance} km exceeds MAX_AQI_STATION_DISTANCE_KM (${MAX_AQI_STATION_DISTANCE_KM} km).`);
         return {
           status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
