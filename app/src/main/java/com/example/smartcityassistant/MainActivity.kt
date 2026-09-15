@@ -511,14 +511,6 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
 
     val aqiState by aqiViewModel.uiState.collectAsState()
 
-    LaunchedEffect(currentLat, currentLon) {
-        val lat = currentLat
-        val lon = currentLon
-        if (lat != null && lon != null) {
-            aqiViewModel.loadAqi(lat, lon)
-        }
-    }
-
     var fetchCurrentLocation: () -> Unit = {}
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
