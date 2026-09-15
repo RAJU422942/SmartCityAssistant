@@ -502,9 +502,9 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
-    var locationText by rememberSaveable { mutableStateOf("Madhuban, Bihar") }
-    var currentLat by rememberSaveable { mutableStateOf(25.6022) }
-    var currentLon by rememberSaveable { mutableStateOf(85.1376) }
+    var locationText by rememberSaveable { mutableStateOf("Detecting current location...") }
+    var currentLat by rememberSaveable { mutableStateOf<Double?>(null) }
+    var currentLon by rememberSaveable { mutableStateOf<Double?>(null) }
     var isLocating by remember { mutableStateOf(false) }
     var showSearchDialog by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -513,7 +513,65 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
     val aqiState by aqiViewModel.uiState.collectAsState()
 
     LaunchedEffect(currentLat, currentLon) {
-        aqiViewModel.loadAqi(currentLat, currentLon)
+        val lat = currentLat
+        val lon = currentLon
+        if (lat != null && lon != null) {
+            aqiViewModel.loadAqi(lat, lon)
+        }
+    }
+
+    var fetchCurrentLocation: () -> Unit = {}
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        if (perms.values.any { it }) {
+            fetchCurrentLocation()
+        } else {
+            locationText = "Location permission required"
+            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fetchCurrentLocation = {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
+            isLocating = true
+            locationText = "Detecting current location..."
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { loc ->
+                    isLocating = false
+                    if (loc != null) {
+                        currentLat = loc.latitude
+                        currentLon = loc.longitude
+                        scope.launch {
+                            val address = TransportService.getAddressFromLocation(context, loc.latitude, loc.longitude)
+                            locationText = if (address.isNotBlank() && address != "Unknown Location" && address != "Location detected") {
+                                address
+                            } else {
+                                "Current location (${String.format("%.4f", loc.latitude)}, ${String.format("%.4f", loc.longitude)})"
+                            }
+                            aqiViewModel.loadAqi(loc.latitude, loc.longitude)
+                        }
+                    } else {
+                        locationText = "Location unavailable"
+                        Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .addOnFailureListener {
+                    isLocating = false
+                    locationText = "Location unavailable"
+                    Toast.makeText(context, "Location error", Toast.LENGTH_SHORT).show()
+                }
+        } else {
+            locationText = "Location permission required"
+            locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        fetchCurrentLocation()
     }
 
     if (showSearchDialog) {
@@ -556,7 +614,7 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
                                     locationText = addr.getAddressLine(0) ?: searchQuery
                                     showSearchDialog = false
                                     searchQuery = ""
-                                    aqiViewModel.loadAqi(currentLat, currentLon)
+                                    aqiViewModel.loadAqi(addr.latitude, addr.longitude)
                                 } else {
                                     Toast.makeText(context, "Location not found", Toast.LENGTH_SHORT).show()
                                 }
@@ -576,31 +634,6 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
                 }
             }
         )
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { perms ->
-        if (perms.values.any { it }) {
-            isLocating = true
-            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                isLocating = false
-                loc?.let {
-                    currentLat = it.latitude
-                    currentLon = it.longitude
-                    scope.launch {
-                        val address = TransportService.getAddressFromLocation(context, it.latitude, it.longitude)
-                        locationText = address
-                        aqiViewModel.loadAqi(it.latitude, it.longitude)
-                    }
-                } ?: run {
-                    Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
-                }
-            }.addOnFailureListener {
-                isLocating = false
-                Toast.makeText(context, "Location error", Toast.LENGTH_SHORT).show()
-            }
-        }
     }
 
     Column(
@@ -645,25 +678,7 @@ fun SmartCityHomeScreen(onNavigate: (String) -> Unit) {
                         } else {
                             TextButton(
                                 onClick = {
-                                    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                                    if (fine == PackageManager.PERMISSION_GRANTED) {
-                                        isLocating = true
-                                        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                                            isLocating = false
-                                            loc?.let {
-                                                currentLat = it.latitude
-                                                currentLon = it.longitude
-                                                scope.launch {
-                                                    locationText = TransportService.getAddressFromLocation(context, it.latitude, it.longitude)
-                                                    aqiViewModel.loadAqi(it.latitude, it.longitude)
-                                                }
-                                            } ?: run {
-                                                Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    } else {
-                                        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                                    }
+                                    fetchCurrentLocation()
                                 },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                             ) {

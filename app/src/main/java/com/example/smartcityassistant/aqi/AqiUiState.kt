@@ -7,6 +7,9 @@ sealed interface AqiUiState {
         val category: String,
         val dominantPollutant: String?,
         val stationName: String?,
+        val stationLatitude: Double?,
+        val stationLongitude: Double?,
+        val distanceKm: Double?,
         val pm25: Double?,
         val pm10: Double?,
         val co: Double?,
@@ -16,5 +19,6 @@ sealed interface AqiUiState {
         val isCached: Boolean = false,
         val lastUpdatedText: String = "LIVE"
     ) : AqiUiState
+    data class NoNearby(val message: String, val distanceKm: Double?) : AqiUiState
     data class Error(val message: String) : AqiUiState
 }

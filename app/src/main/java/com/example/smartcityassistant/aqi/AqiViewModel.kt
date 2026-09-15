@@ -16,13 +16,14 @@ class AqiViewModel(application: Application) : AndroidViewModel(application) {
     fun loadAqi(lat: Double, lon: Double) {
         // Pass lat/lon so a cached reading from a DIFFERENT location is never reused.
         val cached = repository.getCachedAqi(lat, lon)
-        if ((cached != null) && (!cached.isCached)) {
-            _uiState.value = cached
-            return
-        }
-
         if (cached != null) {
-            _uiState.value = cached
+            val isSuccessFresh = (cached as? AqiUiState.Success)?.isCached == false
+            if (isSuccessFresh || cached is AqiUiState.NoNearby) {
+                _uiState.value = cached
+                if (isSuccessFresh) return
+            } else {
+                _uiState.value = cached
+            }
         } else {
             _uiState.value = AqiUiState.Loading
         }
@@ -30,8 +31,8 @@ class AqiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = repository.fetchAqi(lat, lon)
             result.fold(
-                onSuccess = { successState ->
-                    _uiState.value = successState
+                onSuccess = { state ->
+                    _uiState.value = state
                 },
                 onFailure = { err ->
                     if (cached != null) {

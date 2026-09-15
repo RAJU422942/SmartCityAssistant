@@ -17,7 +17,6 @@ class AqiRepository(context: Context) {
         private const val KEY_AQI_DATA = "cached_aqi_json"
         private const val KEY_TIMESTAMP = "cached_aqi_timestamp"
         private const val CACHE_DURATION_MS = 20 * 60 * 1000L // 20 minutes
-        // ~0.05 degrees is roughly 5km — close enough to reuse a cached reading.
         private const val LOCATION_MATCH_THRESHOLD = 0.05
     }
 
@@ -28,13 +27,7 @@ class AqiRepository(context: Context) {
         val lon: Double = 0.0,
     )
 
-    /**
-     * Returns a cached reading only if one exists AND (when lat/lon are supplied)
-     * it was captured near the requested coordinates. Previously this ignored
-     * lat/lon entirely, so a fresh cached reading from one location would be shown
-     * for a completely different location without ever hitting the network.
-     */
-    fun getCachedAqi(lat: Double? = null, lon: Double? = null): AqiUiState.Success? {
+    fun getCachedAqi(lat: Double? = null, lon: Double? = null): AqiUiState? {
         val json = prefs.getString(KEY_AQI_DATA, null) ?: return null
         val timestamp = prefs.getLong(KEY_TIMESTAMP, 0L)
         val ageMs = System.currentTimeMillis() - timestamp
@@ -50,7 +43,14 @@ class AqiRepository(context: Context) {
             }
 
             val resp = cached.response
-            val aqiVal = resp.aqi ?: return null
+            if (resp.status == "NO_NEARBY_AQI_STATION") {
+                return AqiUiState.NoNearby(resp.message ?: "No nearby air quality monitoring station was found for your current location.", resp.distanceKm)
+            }
+            if (resp.status != "OK" || resp.aqi == null) {
+                return null
+            }
+
+            val aqiVal = resp.aqi
             val style = AqiClassification.getStyle(aqiVal)
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
@@ -60,6 +60,9 @@ class AqiRepository(context: Context) {
                 category = resp.category ?: style.category,
                 dominantPollutant = resp.dominantPollutant ?: "PM2.5",
                 stationName = resp.stationName ?: "Monitoring Station",
+                stationLatitude = resp.stationLatitude,
+                stationLongitude = resp.stationLongitude,
+                distanceKm = resp.distanceKm,
                 pm25 = resp.pm25,
                 pm10 = resp.pm10,
                 co = resp.co,
@@ -85,42 +88,54 @@ class AqiRepository(context: Context) {
         }
     }
 
-    suspend fun fetchAqi(lat: Double, lon: Double): Result<AqiUiState.Success> {
+    suspend fun fetchAqi(lat: Double, lon: Double): Result<AqiUiState> {
         return try {
             val resp = AqiClient.service.getAqi(lat, lon)
-            if ((resp.status == "OK") && (resp.aqi != null)) {
-                saveCache(resp, lat, lon)
-                val aqiVal = resp.aqi
-                val style = AqiClassification.getStyle(aqiVal)
-                Result.success(
-                    AqiUiState.Success(
-                        aqi = aqiVal,
-                        category = resp.category ?: style.category,
-                        dominantPollutant = resp.dominantPollutant ?: "PM2.5",
-                        stationName = resp.stationName ?: "Monitoring Station",
-                        pm25 = resp.pm25,
-                        pm10 = resp.pm10,
-                        co = resp.co,
-                        no2 = resp.no2,
-                        o3 = resp.o3,
-                        timeString = resp.timeString,
-                        isCached = false,
-                        lastUpdatedText = "LIVE",
-                    )
-                )
-            } else {
-                Result.failure(Exception(resp.message ?: "AQI data unavailable for location"))
+            saveCache(resp, lat, lon)
+
+            when (resp.status) {
+                "OK" -> {
+                    if (resp.aqi != null) {
+                        val aqiVal = resp.aqi
+                        val style = AqiClassification.getStyle(aqiVal)
+                        Result.success(
+                            AqiUiState.Success(
+                                aqi = aqiVal,
+                                category = resp.category ?: style.category,
+                                dominantPollutant = resp.dominantPollutant ?: "PM2.5",
+                                stationName = resp.stationName ?: "Monitoring Station",
+                                stationLatitude = resp.stationLatitude,
+                                stationLongitude = resp.stationLongitude,
+                                distanceKm = resp.distanceKm,
+                                pm25 = resp.pm25,
+                                pm10 = resp.pm10,
+                                co = resp.co,
+                                no2 = resp.no2,
+                                o3 = resp.o3,
+                                timeString = resp.timeString,
+                                isCached = false,
+                                lastUpdatedText = "LIVE"
+                            )
+                        )
+                    } else {
+                        Result.success(AqiUiState.NoNearby(resp.message ?: "No nearby air quality monitoring station was found for your current location.", resp.distanceKm))
+                    }
+                }
+                "NO_NEARBY_AQI_STATION" -> {
+                    Result.success(AqiUiState.NoNearby(resp.message ?: "No nearby air quality monitoring station was found for your current location.", resp.distanceKm))
+                }
+                else -> {
+                    Result.success(AqiUiState.Error(resp.message ?: "Air quality data unavailable"))
+                }
             }
         } catch (e: SocketTimeoutException) {
-            // Most common cause with a free-tier host: the server was asleep and didn't
-            // wake up in time. Surfacing this distinctly makes it obvious in the UI/logs.
-            Result.failure(Exception("AQI server is waking up (free hosting sleeps when idle) — please retry in a few seconds."))
+            Result.success(AqiUiState.Error("AQI server is waking up (free hosting sleeps when idle) — please retry in a few seconds."))
         } catch (e: HttpException) {
-            Result.failure(Exception("AQI server returned an error (HTTP ${e.code()})."))
+            Result.success(AqiUiState.Error("AQI server returned an error (HTTP ${e.code()})."))
         } catch (e: IOException) {
-            Result.failure(Exception("Couldn't reach the AQI server. Check your internet connection."))
+            Result.success(AqiUiState.Error("Couldn't reach the AQI server. Check your internet connection."))
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.success(AqiUiState.Error(e.localizedMessage ?: "Air quality unavailable"))
         }
     }
 }

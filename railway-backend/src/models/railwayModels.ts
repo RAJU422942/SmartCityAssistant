@@ -48,19 +48,20 @@ export interface BackendTrainResponse {
 
 export interface BackendAqiResponse {
   status: string;
-  aqi?: number;
-  category?: string;
-  dominantPollutant?: string | null;
-  stationName?: string | null;
-  pm25?: number | null;
-  pm10?: number | null;
-  co?: number | null;
-  no2?: number | null;
-  o3?: number | null;
-  timeString?: string | null;
-  isApproximate?: boolean;
-  distanceKm?: number;
-  message?: string;
+  aqi: number | null;
+  category: string | null;
+  dominantPollutant: string | null;
+  stationName: string | null;
+  stationLatitude: number | null;
+  stationLongitude: number | null;
+  distanceKm: number | null;
+  pm25: number | null;
+  pm10: number | null;
+  co: number | null;
+  no2: number | null;
+  o3: number | null;
+  timeString: string | null;
+  message?: string | null;
 }
 
 export interface UnavailableResponse {

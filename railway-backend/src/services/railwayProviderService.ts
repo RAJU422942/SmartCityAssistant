@@ -7,6 +7,20 @@ import {
   UnavailableResponse
 } from '../models/railwayModels';
 
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+const MAX_AQI_STATION_DISTANCE_KM = 100;
+
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
@@ -328,12 +342,27 @@ export class RailwayProviderService {
 
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
     const aqiKey = this.getAqiKey();
+    const userLat = parseFloat(lat);
+    const userLon = parseFloat(lon);
     console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, requested lat: ${lat}, lon: ${lon}`);
 
     if (!aqiKey) {
       return {
         status: 'UNAVAILABLE',
-        message: 'AQI provider is not configured'
+        message: 'AQI provider is not configured',
+        aqi: null,
+        category: null,
+        dominantPollutant: null,
+        stationName: null,
+        stationLatitude: null,
+        stationLongitude: null,
+        distanceKm: null,
+        pm25: null,
+        pm10: null,
+        co: null,
+        no2: null,
+        o3: null,
+        timeString: null
       };
     }
 
@@ -342,27 +371,120 @@ export class RailwayProviderService {
       const res = await this.fetchWithTimeout(url);
 
       if (!res.ok) {
-        return { status: 'UNAVAILABLE', message: 'Air quality data is not available for your current location.' };
+        return {
+          status: 'UNAVAILABLE',
+          message: 'Air quality data is not available for your current location.',
+          aqi: null,
+          category: null,
+          dominantPollutant: null,
+          stationName: null,
+          stationLatitude: null,
+          stationLongitude: null,
+          distanceKm: null,
+          pm25: null,
+          pm10: null,
+          co: null,
+          no2: null,
+          o3: null,
+          timeString: null
+        };
       }
 
       const json = await res.json();
 
       if (json?.status === 'error' && json?.data === 'Invalid key') {
-        return { status: 'UNAVAILABLE', message: 'AQI provider authentication failed' };
+        return {
+          status: 'UNAVAILABLE',
+          message: 'AQI provider authentication failed',
+          aqi: null,
+          category: null,
+          dominantPollutant: null,
+          stationName: null,
+          stationLatitude: null,
+          stationLongitude: null,
+          distanceKm: null,
+          pm25: null,
+          pm10: null,
+          co: null,
+          no2: null,
+          o3: null,
+          timeString: null
+        };
       }
 
       if (json?.status !== 'ok' || !json?.data) {
-        return { status: 'UNAVAILABLE', message: 'Air quality data is not available for your current location.' };
+        return {
+          status: 'NO_NEARBY_AQI_STATION',
+          aqi: null,
+          category: null,
+          dominantPollutant: null,
+          stationName: null,
+          stationLatitude: null,
+          stationLongitude: null,
+          distanceKm: null,
+          pm25: null,
+          pm10: null,
+          co: null,
+          no2: null,
+          o3: null,
+          timeString: null,
+          message: 'No nearby air quality monitoring station was found for your current location.'
+        };
       }
 
       const d = json.data;
+      const stationGeo = d.city?.geo;
+      if (!Array.isArray(stationGeo) || stationGeo.length < 2 || typeof stationGeo[0] !== 'number' || typeof stationGeo[1] !== 'number') {
+        return {
+          status: 'UNAVAILABLE',
+          message: 'Air quality station location could not be verified.',
+          aqi: null,
+          category: null,
+          dominantPollutant: null,
+          stationName: null,
+          stationLatitude: null,
+          stationLongitude: null,
+          distanceKm: null,
+          pm25: null,
+          pm10: null,
+          co: null,
+          no2: null,
+          o3: null,
+          timeString: null
+        };
+      }
+
+      const stationLat = stationGeo[0];
+      const stationLon = stationGeo[1];
+      const distanceKm = haversineKm(userLat, userLon, stationLat, stationLon);
+      const roundedDistance = Math.round(distanceKm * 10) / 10;
+
+      console.log(`[AQI Distance Check]: user=(${userLat}, ${userLon}), station=(${stationLat}, ${stationLon}), distance=${roundedDistance} km, threshold=${MAX_AQI_STATION_DISTANCE_KM} km`);
+
+      if (roundedDistance > MAX_AQI_STATION_DISTANCE_KM) {
+        return {
+          status: 'NO_NEARBY_AQI_STATION',
+          aqi: null,
+          category: null,
+          dominantPollutant: null,
+          stationName: null,
+          stationLatitude: stationLat,
+          stationLongitude: stationLon,
+          distanceKm: roundedDistance,
+          pm25: null,
+          pm10: null,
+          co: null,
+          no2: null,
+          o3: null,
+          timeString: null,
+          message: `No nearby air quality monitoring station was found for your current location (~${roundedDistance} km away).`
+        };
+      }
+
       const aqiVal = typeof d.aqi === 'number' ? d.aqi : 0;
       const domPol = d.dominentpol || null;
       const station = d.city?.name || null;
-      const stationCoords = d.city?.geo || null;
       const iaqi = d.iaqi || {};
-
-      console.log(`[AQI Success]: requestedLat=${lat}, requestedLon=${lon}, station=${station}, stationCoords=${JSON.stringify(stationCoords)}, aqi=${aqiVal}`);
 
       let cat = 'GOOD';
       if (aqiVal <= 50) cat = 'GOOD';
@@ -378,6 +500,9 @@ export class RailwayProviderService {
         category: cat,
         dominantPollutant: domPol?.toUpperCase() || null,
         stationName: station,
+        stationLatitude: stationLat,
+        stationLongitude: stationLon,
+        distanceKm: roundedDistance,
         pm25: iaqi.pm25?.v ?? null,
         pm10: iaqi.pm10?.v ?? null,
         co: iaqi.co?.v ?? null,
@@ -387,7 +512,23 @@ export class RailwayProviderService {
       };
     } catch (e: any) {
       console.error('[AQI Service Error]:', e.message);
-      return { status: 'ERROR', message: e.message || 'AQI service error' };
+      return {
+        status: 'ERROR',
+        message: e.message || 'AQI service error',
+        aqi: null,
+        category: null,
+        dominantPollutant: null,
+        stationName: null,
+        stationLatitude: null,
+        stationLongitude: null,
+        distanceKm: null,
+        pm25: null,
+        pm10: null,
+        co: null,
+        no2: null,
+        o3: null,
+        timeString: null
+      };
     }
   }
 }

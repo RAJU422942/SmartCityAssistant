@@ -65,6 +65,31 @@ fun AqiCard(
                     }
                 }
             }
+            is AqiUiState.NoNearby -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onClick() }
+                        .padding(16.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("AIR QUALITY (AQI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Air quality unavailable nearby", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("No nearby station (>100 km)", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+                        }
+                    }
+                }
+            }
             is AqiUiState.Success -> {
                 val style = AqiClassification.getStyle(uiState.aqi)
                 Row(

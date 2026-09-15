@@ -50,6 +50,28 @@ fun AqiDetailsScreen(
                             Text("Air Quality Index", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Gray)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text("AQI unavailable", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = Color.DarkGray)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(state.message, fontSize = 14.sp, color = Color.Gray)
+                        }
+                    }
+                }
+                is AqiUiState.NoNearby -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Text("Air Quality Index", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Air quality unavailable nearby", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1A1A1A))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(state.message, fontSize = 14.sp, color = Color.Gray)
+                            state.distanceKm?.let { dist ->
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Nearest monitoring station is ~$dist km away (>100 km threshold).", fontSize = 12.sp, color = Color.Gray)
+                            }
                         }
                     }
                 }
@@ -86,7 +108,13 @@ fun AqiDetailsScreen(
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = state.stationName ?: "Monitoring Station",
+                                        text = buildString {
+                                            append("Nearest available monitoring station:\n")
+                                            append(state.stationName ?: "Monitoring Station")
+                                            state.distanceKm?.let { dist ->
+                                                append("\nDistance: ~$dist km from your location")
+                                            }
+                                        },
                                         fontSize = 13.sp,
                                         color = Color.Gray
                                     )
