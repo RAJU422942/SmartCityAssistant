@@ -60,8 +60,11 @@ export interface BackendAqiResponse {
   co: number | null;
   no2: number | null;
   o3: number | null;
+  so2?: number | null;
+  nh3?: number | null;
   timeString: string | null;
   message?: string | null;
+  source?: string | null;
 }
 
 export interface UnavailableResponse {

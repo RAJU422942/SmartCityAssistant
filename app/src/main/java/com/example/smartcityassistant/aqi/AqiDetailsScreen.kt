@@ -72,6 +72,8 @@ fun AqiDetailsScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("Nearest monitoring station is ~$dist km away (>100 km threshold).", fontSize = 12.sp, color = Color.Gray)
                             }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Source: Central Pollution Control Board (CPCB)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0D2B4E))
                         }
                     }
                 }
@@ -122,6 +124,8 @@ fun AqiDetailsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
+                            Text("Source: ${state.source ?: "Central Pollution Control Board (CPCB)"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0D2B4E))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text("Last updated: ${state.timeString ?: state.lastUpdatedText}", fontSize = 12.sp, color = Color.Gray)
                         }
                     }

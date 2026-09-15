@@ -21,6 +21,15 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 
 const MAX_AQI_STATION_DISTANCE_KM = 100;
 
+function getCpcbCategory(aqi: number): string {
+  if (aqi <= 50) return 'GOOD';
+  if (aqi <= 100) return 'SATISFACTORY';
+  if (aqi <= 200) return 'MODERATE';
+  if (aqi <= 300) return 'POOR';
+  if (aqi <= 400) return 'VERY POOR';
+  return 'SEVERE';
+}
+
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
@@ -28,8 +37,8 @@ export class RailwayProviderService {
     return rawKey.trim().replace(/^["']|["']$/g, '');
   }
 
-  private getAqiKey(): string | undefined {
-    const rawKey = process.env.AQICN_API_KEY;
+  private getCpcbKey(): string | undefined {
+    const rawKey = process.env.CPCB_API_KEY || process.env.AQICN_API_KEY;
     if (!rawKey) return undefined;
     return rawKey.trim().replace(/^["']|["']$/g, '');
   }
@@ -341,15 +350,15 @@ export class RailwayProviderService {
   }
 
   async getAqi(lat: string, lon: string): Promise<BackendAqiResponse | UnavailableResponse> {
-    const aqiKey = this.getAqiKey();
+    const apiKey = this.getCpcbKey();
     const userLat = parseFloat(lat);
     const userLon = parseFloat(lon);
-    console.log(`[AQI Diagnostic]: AQICN_API_KEY exists: ${!!aqiKey}, requested lat: ${lat}, lon: ${lon}`);
+    console.log(`[CPCB AQI]: API key exists: ${!!apiKey}, requested lat: ${lat}, lon: ${lon}`);
 
-    if (!aqiKey) {
+    if (!apiKey) {
       return {
         status: 'UNAVAILABLE',
-        message: 'AQI provider is not configured',
+        message: 'CPCB AQI provider is not configured',
         aqi: null,
         category: null,
         dominantPollutant: null,
@@ -362,18 +371,22 @@ export class RailwayProviderService {
         co: null,
         no2: null,
         o3: null,
-        timeString: null
+        so2: null,
+        nh3: null,
+        timeString: null,
+        source: 'CPCB'
       };
     }
 
     try {
-      const url = `https://api.waqi.info/feed/geo:${lat};${lon}/?token=${aqiKey}`;
+      const resourceId = '3b01bcb8-0b14-4abf-b1f2-8ec91b205104';
+      const url = `https://api.data.gov.in/resource/${resourceId}?api-key=${apiKey}&format=json&limit=1000`;
       const res = await this.fetchWithTimeout(url);
 
       if (!res.ok) {
         return {
           status: 'UNAVAILABLE',
-          message: 'Air quality data is not available for your current location.',
+          message: 'CPCB AQI data service is temporarily unavailable.',
           aqi: null,
           category: null,
           dominantPollutant: null,
@@ -386,33 +399,16 @@ export class RailwayProviderService {
           co: null,
           no2: null,
           o3: null,
-          timeString: null
+          so2: null,
+          nh3: null,
+          timeString: null,
+          source: 'CPCB'
         };
       }
 
-      const json = await res.json();
-
-      if (json?.status === 'error' && json?.data === 'Invalid key') {
-        return {
-          status: 'UNAVAILABLE',
-          message: 'AQI provider authentication failed',
-          aqi: null,
-          category: null,
-          dominantPollutant: null,
-          stationName: null,
-          stationLatitude: null,
-          stationLongitude: null,
-          distanceKm: null,
-          pm25: null,
-          pm10: null,
-          co: null,
-          no2: null,
-          o3: null,
-          timeString: null
-        };
-      }
-
-      if (json?.status !== 'ok' || !json?.data) {
+      const json: any = await res.json();
+      const records = json?.records;
+      if (!Array.isArray(records) || records.length === 0) {
         return {
           status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
@@ -427,17 +423,50 @@ export class RailwayProviderService {
           co: null,
           no2: null,
           o3: null,
+          so2: null,
+          nh3: null,
           timeString: null,
-          message: 'No nearby air quality monitoring station was found for your current location.'
+          message: 'No CPCB air quality monitoring stations found.',
+          source: 'CPCB'
         };
       }
 
-      const d = json.data;
-      const stationGeo = d.city?.geo;
-      if (!Array.isArray(stationGeo) || stationGeo.length < 2 || typeof stationGeo[0] !== 'number' || typeof stationGeo[1] !== 'number') {
+      // Group records by station key (station name + lat + lon)
+      const stationMap = new Map<string, any>();
+
+      for (const rec of records) {
+        const stationName = rec.station || rec.city || 'Unknown Station';
+        const latitude = parseFloat(rec.latitude);
+        const longitude = parseFloat(rec.longitude);
+        if (isNaN(latitude) || isNaN(longitude)) continue;
+
+        const key = `${stationName}_${latitude}_${longitude}`;
+        if (!stationMap.has(key)) {
+          stationMap.set(key, {
+            stationName,
+            latitude,
+            longitude,
+            city: rec.city,
+            state: rec.state,
+            lastUpdate: rec.last_update,
+            pollutants: {}
+          });
+        }
+
+        const stationObj = stationMap.get(key);
+        const polId = (rec.pollutant_id || '').toLowerCase();
+        const polVal = parseFloat(rec.pollutant_avg ?? rec.pollutant_max ?? rec.aqi ?? '0');
+        if (!isNaN(polVal)) {
+          stationObj.pollutants[polId] = polVal;
+          if (polId === 'aqi' || polId === 'overall_aqi') {
+            stationObj.aqi = polVal;
+          }
+        }
+      }
+
+      if (stationMap.size === 0) {
         return {
-          status: 'UNAVAILABLE',
-          message: 'Air quality station location could not be verified.',
+          status: 'NO_NEARBY_AQI_STATION',
           aqi: null,
           category: null,
           dominantPollutant: null,
@@ -450,16 +479,28 @@ export class RailwayProviderService {
           co: null,
           no2: null,
           o3: null,
-          timeString: null
+          so2: null,
+          nh3: null,
+          timeString: null,
+          message: 'No valid CPCB stations with coordinates found.',
+          source: 'CPCB'
         };
       }
 
-      const stationLat = stationGeo[0];
-      const stationLon = stationGeo[1];
-      const distanceKm = haversineKm(userLat, userLon, stationLat, stationLon);
-      const roundedDistance = Math.round(distanceKm * 10) / 10;
+      // Find nearest station to userLat, userLon
+      let nearestStation: any = null;
+      let minDistance = Infinity;
 
-      console.log(`[AQI Distance Check]: user=(${userLat}, ${userLon}), station=(${stationLat}, ${stationLon}), distance=${roundedDistance} km, threshold=${MAX_AQI_STATION_DISTANCE_KM} km`);
+      for (const station of stationMap.values()) {
+        const dist = haversineKm(userLat, userLon, station.latitude, station.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestStation = station;
+        }
+      }
+
+      const roundedDistance = Math.round(minDistance * 10) / 10;
+      console.log(`[CPCB Nearest Station]: found="${nearestStation.stationName}" at dist=${roundedDistance} km (threshold=${MAX_AQI_STATION_DISTANCE_KM} km)`);
 
       if (roundedDistance > MAX_AQI_STATION_DISTANCE_KM) {
         return {
@@ -468,53 +509,65 @@ export class RailwayProviderService {
           category: null,
           dominantPollutant: null,
           stationName: null,
-          stationLatitude: stationLat,
-          stationLongitude: stationLon,
+          stationLatitude: nearestStation.latitude,
+          stationLongitude: nearestStation.longitude,
           distanceKm: roundedDistance,
           pm25: null,
           pm10: null,
           co: null,
           no2: null,
           o3: null,
+          so2: null,
+          nh3: null,
           timeString: null,
-          message: `No nearby air quality monitoring station was found for your current location (~${roundedDistance} km away).`
+          message: `No nearby CPCB air quality monitoring station was found for your current location (~${roundedDistance} km away).`,
+          source: 'CPCB'
         };
       }
 
-      const aqiVal = typeof d.aqi === 'number' ? d.aqi : 0;
-      const domPol = d.dominentpol || null;
-      const station = d.city?.name || null;
-      const iaqi = d.iaqi || {};
+      const pols = nearestStation.pollutants;
+      let aqiVal = nearestStation.aqi;
+      if (typeof aqiVal !== 'number' || isNaN(aqiVal)) {
+        const vals = Object.values(pols).filter((v): v is number => typeof v === 'number');
+        aqiVal = vals.length > 0 ? Math.round(Math.max(...vals)) : 50;
+      }
 
-      let cat = 'GOOD';
-      if (aqiVal <= 50) cat = 'GOOD';
-      else if (aqiVal <= 100) cat = 'MODERATE';
-      else if (aqiVal <= 150) cat = 'UNHEALTHY FOR SENSITIVE GROUPS';
-      else if (aqiVal <= 200) cat = 'UNHEALTHY';
-      else if (aqiVal <= 300) cat = 'VERY UNHEALTHY';
-      else cat = 'HAZARDOUS';
+      let dominantPol = 'pm25';
+      let maxVal = -1;
+      for (const [p, v] of Object.entries(pols)) {
+        if (typeof v === 'number' && v > maxVal) {
+          maxVal = v;
+          dominantPol = p;
+        }
+      }
+
+      const category = getCpcbCategory(aqiVal);
 
       return {
         status: 'OK',
         aqi: aqiVal,
-        category: cat,
-        dominantPollutant: domPol?.toUpperCase() || null,
-        stationName: station,
-        stationLatitude: stationLat,
-        stationLongitude: stationLon,
+        category,
+        dominantPollutant: dominantPol.toUpperCase(),
+        stationName: nearestStation.stationName,
+        stationLatitude: nearestStation.latitude,
+        stationLongitude: nearestStation.longitude,
         distanceKm: roundedDistance,
-        pm25: iaqi.pm25?.v ?? null,
-        pm10: iaqi.pm10?.v ?? null,
-        co: iaqi.co?.v ?? null,
-        no2: iaqi.no2?.v ?? null,
-        o3: iaqi.o3?.v ?? null,
-        timeString: d.time?.s || null
+        pm25: pols['pm2.5'] ?? pols['pm25'] ?? null,
+        pm10: pols['pm10'] ?? null,
+        co: pols['co'] ?? null,
+        no2: pols['no2'] ?? null,
+        o3: pols['o3'] ?? null,
+        so2: pols['so2'] ?? null,
+        nh3: pols['nh3'] ?? null,
+        timeString: nearestStation.lastUpdate || null,
+        source: 'CPCB'
       };
+
     } catch (e: any) {
-      console.error('[AQI Service Error]:', e.message);
+      console.error('[CPCB AQI Service Error]:', e.message);
       return {
         status: 'ERROR',
-        message: e.message || 'AQI service error',
+        message: e.message || 'CPCB AQI service error',
         aqi: null,
         category: null,
         dominantPollutant: null,
@@ -527,7 +580,10 @@ export class RailwayProviderService {
         co: null,
         no2: null,
         o3: null,
-        timeString: null
+        so2: null,
+        nh3: null,
+        timeString: null,
+        source: 'CPCB'
       };
     }
   }

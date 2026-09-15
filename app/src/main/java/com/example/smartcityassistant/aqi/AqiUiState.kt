@@ -16,6 +16,7 @@ sealed interface AqiUiState {
         val no2: Double?,
         val o3: Double?,
         val timeString: String?,
+        val source: String?,
         val isCached: Boolean = false,
         val lastUpdatedText: String = "LIVE"
     ) : AqiUiState

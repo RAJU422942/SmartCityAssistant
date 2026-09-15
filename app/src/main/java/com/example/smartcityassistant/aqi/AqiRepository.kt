@@ -69,6 +69,7 @@ class AqiRepository(context: Context) {
                 no2 = resp.no2,
                 o3 = resp.o3,
                 timeString = resp.timeString,
+                source = resp.source ?: "CPCB",
                 isCached = isExpired,
                 lastUpdatedText = updatedText,
             )
@@ -113,6 +114,7 @@ class AqiRepository(context: Context) {
                                 no2 = resp.no2,
                                 o3 = resp.o3,
                                 timeString = resp.timeString,
+                                source = resp.source ?: "CPCB",
                                 isCached = false,
                                 lastUpdatedText = "LIVE"
                             )
