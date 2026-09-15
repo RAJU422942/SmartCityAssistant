@@ -1,5 +1,6 @@
 package com.example.smartcityassistant.data.ai
 
+import com.example.smartcityassistant.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -19,7 +20,7 @@ object AiApiClient {
     private const val BASE_URL = "https://smart-city-assistant-railway-backend.onrender.com/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
     }
 
     private val okHttpClient = OkHttpClient.Builder()

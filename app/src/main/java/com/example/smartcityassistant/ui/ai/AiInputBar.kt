@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun AiInputBar(
     text: String,
+    isLoading: Boolean,
     onTextChanged: (String) -> Unit,
     onSendClick: () -> Unit,
     onVoiceClick: () -> Unit
@@ -43,6 +44,7 @@ fun AiInputBar(
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChanged,
+                enabled = !isLoading,
                 placeholder = { Text("Ask anything...", color = Color(0xFF888888), fontSize = 14.sp) },
                 modifier = Modifier
                     .weight(1f)
@@ -62,7 +64,7 @@ fun AiInputBar(
                 ),
                 keyboardActions = KeyboardActions(
                     onSend = {
-                        if (text.isNotBlank()) {
+                        if (text.isNotBlank() && !isLoading) {
                             onSendClick()
                         }
                     }
@@ -74,6 +76,7 @@ fun AiInputBar(
 
             IconButton(
                 onClick = onVoiceClick,
+                enabled = !isLoading,
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
@@ -91,11 +94,11 @@ fun AiInputBar(
 
             IconButton(
                 onClick = onSendClick,
-                enabled = text.isNotBlank(),
+                enabled = text.isNotBlank() && !isLoading,
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(if (text.isNotBlank()) Color(0xFF0D2B4E) else Color(0xFFCCCCCC))
+                    .background(if (text.isNotBlank() && !isLoading) Color(0xFF0D2B4E) else Color(0xFFCCCCCC))
             ) {
                 Icon(
                     imageVector = Icons.Default.Send,

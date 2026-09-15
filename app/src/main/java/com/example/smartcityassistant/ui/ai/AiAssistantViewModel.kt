@@ -50,7 +50,7 @@ class AiAssistantViewModel(
 
             result.fold(
                 onSuccess = { data ->
-                    val actionCardData = buildActionCard(data.action, data.parameters)
+                    val actionCardData = buildActionCard(data.action, data.getStringParameters())
                     val assistantMsg = AiMessage(
                         id = UUID.randomUUID().toString(),
                         text = data.reply,

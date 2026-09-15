@@ -121,6 +121,7 @@ fun AiAssistantScreen(
 
                 AiInputBar(
                     text = inputText,
+                    isLoading = isLoading,
                     onTextChanged = { viewModel.updateInputText(it) },
                     onSendClick = { viewModel.sendMessage(inputText) },
                     onVoiceClick = {
