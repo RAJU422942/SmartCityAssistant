@@ -30,6 +30,29 @@ function getCpcbCategory(aqi: number): string {
   return 'SEVERE';
 }
 
+function getNumericField(rec: any, ...keys: string[]): number {
+  for (const k of keys) {
+    for (const recKey of Object.keys(rec)) {
+      if (recKey.toLowerCase() === k.toLowerCase()) {
+        const val = parseFloat(rec[recKey]);
+        if (!isNaN(val)) return val;
+      }
+    }
+  }
+  return NaN;
+}
+
+function getStringField(rec: any, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    for (const recKey of Object.keys(rec)) {
+      if (recKey.toLowerCase() === k.toLowerCase()) {
+        return rec[recKey]?.toString();
+      }
+    }
+  }
+  return undefined;
+}
+
 export class RailwayProviderService {
   private getApiKey(): string | undefined {
     const rawKey = process.env.RAILKIT_API_KEY;
@@ -431,17 +454,20 @@ export class RailwayProviderService {
         };
       }
 
-      // Log first record fields to verify CPCB structure in logs
-      console.log('[CPCB Sample Record Keys]:', Object.keys(records[0]));
-      console.log('[CPCB Sample Record]:', JSON.stringify(records[0]));
+      // Log record count and sample keys to diagnose live response structure
+      console.log(`[CPCB Records Count]: ${records.length}`);
+      if (records.length > 0) {
+        console.log('[CPCB Sample Record Keys]:', Object.keys(records[0]));
+        console.log('[CPCB Sample Record]:', JSON.stringify(records[0]));
+      }
 
       // Group records by station key (station name + lat + lon)
       const stationMap = new Map<string, any>();
 
       for (const rec of records) {
-        const stationName = rec.station || rec.city || rec.location || 'Unknown Station';
-        const latitude = parseFloat(rec.latitude ?? rec.lat ?? rec.lat_value ?? rec.y ?? 'NaN');
-        const longitude = parseFloat(rec.longitude ?? rec.lng ?? rec.lon ?? rec.long ?? rec.x ?? 'NaN');
+        const stationName = getStringField(rec, 'station', 'station_name', 'location', 'city') || 'Unknown Station';
+        const latitude = getNumericField(rec, 'latitude', 'lat', 'lat_value', 'y', 'coordinate_lat');
+        const longitude = getNumericField(rec, 'longitude', 'lng', 'lon', 'long', 'x', 'coordinate_long');
         if (isNaN(latitude) || isNaN(longitude)) continue;
 
         const key = `${stationName}_${latitude}_${longitude}`;
@@ -450,23 +476,27 @@ export class RailwayProviderService {
             stationName,
             latitude,
             longitude,
-            city: rec.city,
-            state: rec.state,
-            lastUpdate: rec.last_update,
+            city: getStringField(rec, 'city'),
+            state: getStringField(rec, 'state'),
+            lastUpdate: getStringField(rec, 'last_update', 'timestamp', 'time'),
             pollutants: {}
           });
         }
 
         const stationObj = stationMap.get(key);
-        const polId = (rec.pollutant_id || rec.pollutant || '').toLowerCase();
-        const polVal = parseFloat(rec.pollutant_avg ?? rec.pollutant_max ?? rec.aqi ?? rec.value ?? '0');
+        const polId = (getStringField(rec, 'pollutant_id', 'pollutant', 'parameter') || '').toLowerCase();
+        const polVal = getNumericField(rec, 'pollutant_avg', 'pollutant_max', 'aqi', 'value', 'avg', 'max');
         if (!isNaN(polVal)) {
-          stationObj.pollutants[polId] = polVal;
-          if (polId === 'aqi' || polId === 'overall_aqi') {
+          if (polId) {
+            stationObj.pollutants[polId] = polVal;
+          }
+          if (polId === 'aqi' || polId === 'overall_aqi' || polId === 'index') {
             stationObj.aqi = polVal;
           }
         }
       }
+
+      console.log(`[CPCB Parsed Stations Count]: ${stationMap.size}`);
 
       if (stationMap.size === 0) {
         return {
