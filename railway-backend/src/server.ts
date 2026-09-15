@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import railwayRoutes from './routes/railwayRoutes';
 import cityAlertsRoutes from './routes/cityAlertsRoutes';
 import governmentRoutes from './routes/governmentRoutes';
+import aiRoutes from './routes/aiRoutes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -35,6 +36,7 @@ app.get('/health', (req, res) => {
 app.use('/api/v1/railway', railwayRoutes);
 app.use('/api/v1/city-alerts', cityAlertsRoutes);
 app.use('/api/v1/government', governmentRoutes);
+app.use('/api/v1/ai', aiRoutes);
 
 // Error Handler
 app.use(errorHandler);
