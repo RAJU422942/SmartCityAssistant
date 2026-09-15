@@ -431,13 +431,16 @@ export class RailwayProviderService {
         };
       }
 
+      // Log first record fields to verify CPCB structure in logs
+      console.log('[CPCB Sample Record]:', JSON.stringify(records[0]));
+
       // Group records by station key (station name + lat + lon)
       const stationMap = new Map<string, any>();
 
       for (const rec of records) {
         const stationName = rec.station || rec.city || 'Unknown Station';
-        const latitude = parseFloat(rec.latitude);
-        const longitude = parseFloat(rec.longitude);
+        const latitude = parseFloat(rec.latitude ?? rec.lat ?? rec.lat_value ?? rec.y ?? 'NaN');
+        const longitude = parseFloat(rec.longitude ?? rec.lng ?? rec.lon ?? rec.long ?? rec.x ?? 'NaN');
         if (isNaN(latitude) || isNaN(longitude)) continue;
 
         const key = `${stationName}_${latitude}_${longitude}`;
@@ -562,7 +565,6 @@ export class RailwayProviderService {
         timeString: nearestStation.lastUpdate || null,
         source: 'CPCB'
       };
-
     } catch (e: any) {
       console.error('[CPCB AQI Service Error]:', e.message);
       return {
