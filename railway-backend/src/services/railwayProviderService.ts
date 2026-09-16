@@ -45,6 +45,56 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * c;
 }
 
+function mapMetSymbolToWeather(symbolCode: string): { condition: string; weatherCode: number } {
+  const code = (symbolCode || '').toLowerCase();
+  if (code.includes('thunder')) return { condition: 'Thunderstorm', weatherCode: 95 };
+  if (code.includes('snow') || code.includes('sleet')) return { condition: 'Snow', weatherCode: 71 };
+  if (code.includes('heavyrain')) return { condition: 'Rainy', weatherCode: 63 };
+  if (code.includes('rainshowers') || code.includes('showers')) return { condition: 'Showers', weatherCode: 80 };
+  if (code.includes('rain') || code.includes('drizzle')) return { condition: 'Rainy', weatherCode: 61 };
+  if (code.includes('fog')) return { condition: 'Foggy', weatherCode: 45 };
+  if (code.includes('cloudy')) return { condition: 'Overcast', weatherCode: 3 };
+  if (code.includes('partlycloudy')) return { condition: 'Partly Cloudy', weatherCode: 2 };
+  if (code.includes('fair')) return { condition: 'Mainly Clear', weatherCode: 1 };
+  if (code.includes('clearsky')) return { condition: 'Sunny', weatherCode: 0 };
+  return { condition: 'Partly Cloudy', weatherCode: 2 };
+}
+
+function calculateSunriseSunset(lat: number, lon: number, date: Date = new Date()): { sunrise: string; sunset: string } {
+  try {
+    const doy = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
+    const declination = 23.45 * Math.sin((360 / 365) * (doy - 81) * (Math.PI / 180));
+    const timeCorrection = 4 * lon;
+    const solarNoon = 12 - timeCorrection / 60;
+
+    const latRad = lat * (Math.PI / 180);
+    const decRad = declination * (Math.PI / 180);
+    const cosH = -Math.tan(latRad) * Math.tan(decRad);
+
+    if (cosH < -1) return { sunrise: "05:30 AM", sunset: "08:30 PM" };
+    if (cosH > 1) return { sunrise: "07:30 AM", sunset: "04:30 PM" };
+
+    const H = (180 / Math.PI) * Math.acos(cosH);
+    const sunriseHour = solarNoon - H / 15;
+    const sunsetHour = solarNoon + H / 15;
+
+    const formatHourDecimal = (decimalHour: number) => {
+      const h = Math.floor((decimalHour + 24) % 24);
+      const m = Math.floor(((decimalHour + 24) % 24 - h) * 60);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+    };
+
+    return {
+      sunrise: formatHourDecimal(sunriseHour),
+      sunset: formatHourDecimal(sunsetHour)
+    };
+  } catch {
+    return { sunrise: "06:15 AM", sunset: "06:45 PM" };
+  }
+}
+
 export class RailwayProviderService {
   private weatherCache = new Map<string, { response: any; timestamp: number }>();
   private weatherInFlight = new Map<string, Promise<any>>();
@@ -53,7 +103,7 @@ export class RailwayProviderService {
   private getNormKey(lat: string | number, lon: string | number): string {
     const lLat = typeof lat === 'string' ? parseFloat(lat) : lat;
     const lLon = typeof lon === 'string' ? parseFloat(lon) : lon;
-    return `${lLat.toFixed(2)}_${lLon.toFixed(2)}`;
+    return `${lLat.toFixed(4)}_${lLon.toFixed(4)}`;
   }
 
   private getApiKey(): string {
@@ -64,7 +114,7 @@ export class RailwayProviderService {
     return process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_PLACES_API_KEY || '';
   }
 
-  private async fetchWithTimeout(url: string, options: any = {}, timeoutMs = 8000): Promise<Response> {
+  private async fetchWithTimeout(url: string, options: any = {}, timeoutMs = 12000): Promise<Response> {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -343,9 +393,15 @@ export class RailwayProviderService {
   }
 
   async getWeather(lat: string, lon: string): Promise<any> {
-    const normKey = this.getNormKey(lat, lon);
     const requestId = Math.random().toString(36).substring(7);
-    console.log(`[WEATHER REQUEST] requestId=${requestId} lat=${lat} lon=${lon} normKey=${normKey}`);
+    const userLat = parseFloat(lat);
+    const userLon = parseFloat(lon);
+    const normLat = userLat.toFixed(4);
+    const normLon = userLon.toFixed(4);
+    const normKey = `${normLat}_${normLon}`;
+
+    console.log(`[WEATHER REQUEST] requestId=${requestId} lat=${lat} lon=${lon}`);
+    console.log(`[METNO FETCH] requestId=${requestId} cacheKey=${normKey}`);
 
     // 1. Check cache
     const cached = this.weatherCache.get(normKey);
@@ -371,19 +427,26 @@ export class RailwayProviderService {
     // 3. Create upstream fetch promise
     const fetchPromise = (async () => {
       try {
-        console.log(`[WEATHER UPSTREAM REQUEST] key=${normKey}`);
-        const userLat = parseFloat(lat);
-        const userLon = parseFloat(lon);
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`;
-        const res = await this.fetchWithTimeout(url);
+        console.log(`[METNO FETCH UPSTREAM] key=${normKey}`);
+        const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${normLat}&lon=${normLon}`;
+        const res = await this.fetchWithTimeout(url, {
+          headers: {
+            'User-Agent': 'SmartCityAssistant/1.0 (contact: support@smartcityassistant.app)'
+          }
+        }, 12000);
+
+        console.log(`[METNO RESPONSE] requestId=${requestId} httpStatus=${res.status}`);
 
         if (res.status === 429) {
           console.log(`[WEATHER UPSTREAM 429] key=${normKey}`);
-          if (cached) {
-            console.log(`[WEATHER 429 FALLBACK] returning stale cache for key=${normKey}`);
-            return cached.response;
-          }
+          if (cached) return cached.response;
           return { status: 'ERROR', message: 'WEATHER_RATE_LIMITED' };
+        }
+
+        if (res.status === 403 || res.status === 400 || res.status === 404) {
+          console.log(`[WEATHER ERROR] requestId=${requestId} httpStatus=${res.status}`);
+          if (cached) return cached.response;
+          return { status: 'ERROR', message: `Weather provider error (${res.status})` };
         }
 
         if (!res.ok) {
@@ -393,70 +456,37 @@ export class RailwayProviderService {
         }
 
         const data: any = await res.json();
-        const current = data.current;
-        const daily = data.daily;
-        const hourlyData = data.hourly;
-
-        if (!current || !daily || !hourlyData || !daily.time || !hourlyData.time) {
-          console.log(`[WEATHER ERROR] requestId=${requestId} incomplete weather data`);
+        const timeseries = data?.properties?.timeseries;
+        if (!timeseries || !Array.isArray(timeseries) || timeseries.length === 0) {
+          console.log(`[WEATHER ERROR] requestId=${requestId} missing timeseries data`);
           if (cached) return cached.response;
           return { status: 'ERROR', message: 'Weather data unavailable.' };
         }
 
-        const code = current.weather_code;
-        let condition = 'Partly Cloudy';
-        if (code === 0) condition = 'Sunny';
-        else if (code >= 1 && code <= 3) condition = 'Partly Cloudy';
-        else if (code === 45 || code === 48) condition = 'Foggy';
-        else if (code >= 51 && code <= 57) condition = 'Drizzle';
-        else if (code >= 61 && code <= 67) condition = 'Rainy';
-        else if (code >= 71 && code <= 77) condition = 'Snow';
-        else if (code >= 80 && code <= 82) condition = 'Showers';
-        else if (code >= 95) condition = 'Thunderstorm';
+        const currentItem = timeseries[0];
+        const instantDetails = currentItem.data.instant.details;
+        const currentTemp = instantDetails.air_temperature ?? null;
+        const humidity = instantDetails.relative_humidity_percentage ?? null;
+        const windSpeed = instantDetails.wind_speed ?? null;
+        const windDir = instantDetails.wind_from_direction ?? null;
 
-        const formatTime = (isoStr: string) => {
-          try {
-            const date = new Date(isoStr);
-            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-          } catch {
-            return isoStr || 'N/A';
-          }
-        };
-
-        const sunriseIso = daily?.sunrise?.[0] || '';
-        const sunsetIso = daily?.sunset?.[0] || '';
-
-        const forecast: any[] = [];
-        for (let i = 0; i < daily.time.length; i++) {
-          const dStr = daily.time[i];
-          const dCode = daily.weather_code[i];
-          let dCond = 'Partly Cloudy';
-          if (dCode === 0) dCond = 'Sunny';
-          else if (dCode >= 1 && dCode <= 3) dCond = 'Partly Cloudy';
-          else if (dCode === 45 || dCode === 48) dCond = 'Foggy';
-          else if (dCode >= 51 && dCode <= 57) dCond = 'Drizzle';
-          else if (dCode >= 61 && dCode <= 67) dCond = 'Rainy';
-          else if (dCode >= 71 && dCode <= 77) dCond = 'Snow';
-          else if (dCode >= 80 && dCode <= 82) dCond = 'Showers';
-          else if (dCode >= 95) dCond = 'Thunderstorm';
-
-          const dateObj = new Date(dStr);
-          const dayName = i === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-
-          forecast.push({
-            date: dStr,
-            dayName,
-            weatherCode: dCode,
-            condition: dCond,
-            maxTemp: daily.temperature_2m_max[i],
-            minTemp: daily.temperature_2m_min[i],
-            precipitationProbabilityMax: daily.precipitation_probability_max?.[i] ?? null
-          });
-        }
+        const symbolCode = currentItem.data.next_1_hours?.summary?.symbol_code ||
+                           currentItem.data.next_6_hours?.summary?.symbol_code ||
+                           'clearsky_day';
+        const { condition, weatherCode } = mapMetSymbolToWeather(symbolCode);
 
         const hourlyList: any[] = [];
-        for (let j = 0; j < hourlyData.time.length; j++) {
-          const tIso = hourlyData.time[j];
+        for (const ts of timeseries) {
+          const tIso = ts.time;
+          const inst = ts.data.instant.details;
+          const hTemp = inst.air_temperature;
+          const hHum = inst.relative_humidity_percentage;
+          const hWind = inst.wind_speed;
+          const hDir = inst.wind_from_direction;
+          const sym = ts.data.next_1_hours?.summary?.symbol_code || ts.data.next_6_hours?.summary?.symbol_code || 'clearsky_day';
+          const hCode = mapMetSymbolToWeather(sym).weatherCode;
+          const precipProb = ts.data.next_1_hours?.details?.precipitation_amount ?? 0;
+
           let hourFormatted = tIso;
           try {
             const dt = new Date(tIso);
@@ -466,29 +496,78 @@ export class RailwayProviderService {
           hourlyList.push({
             time: tIso,
             hourFormatted,
-            temperature: hourlyData.temperature_2m[j],
-            humidity: hourlyData.relative_humidity_2m[j],
-            precipitationProbability: hourlyData.precipitation_probability?.[j] ?? null,
-            weatherCode: hourlyData.weather_code[j],
-            windSpeed: hourlyData.wind_speed_10m[j],
-            windDirection: hourlyData.wind_direction_10m[j]
+            temperature: hTemp,
+            humidity: hHum,
+            precipitationProbability: precipProb > 0 ? Math.min(100, precipProb * 20) : 0,
+            weatherCode: hCode,
+            windSpeed: hWind,
+            windDirection: hDir
           });
         }
 
+        const dailyMap = new Map<string, { temps: number[]; symbols: string[]; precip: number[] }>();
+        for (const ts of timeseries) {
+          const tIso = ts.time;
+          const dateStr = tIso.split('T')[0];
+          const temp = ts.data.instant.details.air_temperature;
+          const sym = ts.data.next_1_hours?.summary?.symbol_code || ts.data.next_6_hours?.summary?.symbol_code || 'clearsky_day';
+          const precip = ts.data.next_1_hours?.details?.precipitation_amount ?? 0;
+
+          if (temp !== undefined && temp !== null) {
+            if (!dailyMap.has(dateStr)) {
+              dailyMap.set(dateStr, { temps: [], symbols: [], precip: [] });
+            }
+            const entry = dailyMap.get(dateStr)!;
+            entry.temps.push(temp);
+            entry.symbols.push(sym);
+            entry.precip.push(precip);
+          }
+        }
+
+        const forecast: any[] = [];
+        let dayIndex = 0;
+        for (const [dateStr, dataEntry] of dailyMap.entries()) {
+          if (forecast.length >= 7) break;
+          const maxT = Math.max(...dataEntry.temps);
+          const minT = Math.min(...dataEntry.temps);
+          const dominantSym = dataEntry.symbols[Math.floor(dataEntry.symbols.length / 2)] || 'clearsky_day';
+          const { condition: dCond, weatherCode: dCode } = mapMetSymbolToWeather(dominantSym);
+          const maxPrecip = Math.max(...dataEntry.precip);
+
+          const dateObj = new Date(dateStr);
+          const dayName = dayIndex === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          dayIndex++;
+
+          forecast.push({
+            date: dateStr,
+            dayName,
+            weatherCode: dCode,
+            condition: dCond,
+            maxTemp: maxT,
+            minTemp: minT,
+            precipitationProbabilityMax: maxPrecip > 0 ? Math.min(100, maxPrecip * 20) : 0
+          });
+        }
+
+        const { sunrise, sunset } = calculateSunriseSunset(userLat, userLon);
+
         const result = {
           status: 'OK',
-          temperature: current.temperature_2m ?? null,
-          apparentTemperature: current.apparent_temperature ?? null,
-          humidity: current.relative_humidity_2m ?? null,
-          windSpeed: current.wind_speed_10m ?? null,
+          temperature: currentTemp,
+          apparentTemperature: currentTemp,
+          humidity,
+          windSpeed,
           condition,
-          weatherCode: code ?? null,
-          sunrise: formatTime(sunriseIso),
-          sunset: formatTime(sunsetIso),
-          source: 'Open-Meteo',
+          weatherCode,
+          sunrise,
+          sunset,
+          source: 'MET_Norway',
           forecast,
           hourly: hourlyList
         };
+
+        console.log(`[METNO PARSER] requestId=${requestId} hourlyCount=${hourlyList.length} dailyCount=${forecast.length}`);
+        console.log(`[WEATHER FINAL] requestId=${requestId} source=MET_NO`);
 
         if (result.status === 'OK' && forecast.length >= 7 && hourlyList.length >= 24) {
           this.weatherCache.set(normKey, { response: result, timestamp: Date.now() });
