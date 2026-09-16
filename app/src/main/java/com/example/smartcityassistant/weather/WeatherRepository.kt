@@ -7,22 +7,28 @@ import androidx.core.content.edit
 import com.example.smartcityassistant.railway.SecureBackendClient
 import com.example.smartcityassistant.railway.WeatherResponseDto
 import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
 import java.io.IOException
 import java.net.SocketTimeoutException
-import kotlin.math.abs
+import java.util.Locale
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 
 class WeatherRepository(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("smart_city_weather_cache", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("smart_city_weather_cache_v2", Context.MODE_PRIVATE)
     private val gson = Gson()
 
     companion object {
         private const val TAG = "WeatherRepository"
-        private const val KEY_DATA = "cached_weather_json"
-        private const val KEY_TIMESTAMP = "cached_weather_timestamp"
         private const val CACHE_DURATION_MS = 30 * 60 * 1000L // 30 minutes
-        private const val LOCATION_MATCH_THRESHOLD = 0.05
     }
+
+    private val inFlightMutex = Mutex()
+    private val inFlightRequests = mutableMapOf<String, Deferred<WeatherUiState>>()
 
     data class CachedWeather(
         val response: WeatherResponseDto,
@@ -31,9 +37,20 @@ class WeatherRepository(context: Context) {
         val lon: Double
     )
 
+    private fun getNormKey(lat: Double, lon: Double): String {
+        return String.format(Locale.US, "%.2f_%.2f", lat, lon)
+    }
+
+    private fun getCacheKeyData(lat: Double, lon: Double): String = "cached_weather_json_${getNormKey(lat, lon)}"
+    private fun getCacheKeyTimestamp(lat: Double, lon: Double): String = "cached_weather_timestamp_${getNormKey(lat, lon)}"
+
     fun getCached(lat: Double, lon: Double): WeatherUiState? {
-        val json = prefs.getString(KEY_DATA, null) ?: return null
-        val timestamp = prefs.getLong(KEY_TIMESTAMP, 0L)
+        val normKey = getNormKey(lat, lon)
+        val jsonKey = getCacheKeyData(lat, lon)
+        val timeKey = getCacheKeyTimestamp(lat, lon)
+
+        val json = prefs.getString(jsonKey, null) ?: return null
+        val timestamp = prefs.getLong(timeKey, 0L)
         val ageMs = System.currentTimeMillis() - timestamp
         val isExpired = ageMs > CACHE_DURATION_MS
 
@@ -42,18 +59,13 @@ class WeatherRepository(context: Context) {
             val resp = cached.response
 
             if (resp.status != "OK" || resp.temperature == null || resp.forecast.isNullOrEmpty() || resp.hourly.isNullOrEmpty()) {
-                Log.w(TAG, "Cached weather missing forecast or hourly data, clearing cache.")
-                prefs.edit { clear() }
+                prefs.edit { remove(jsonKey); remove(timeKey) }
                 return null
             }
 
-            val sameLocation = abs(cached.lat - lat) < LOCATION_MATCH_THRESHOLD &&
-                    abs(cached.lon - lon) < LOCATION_MATCH_THRESHOLD
-            if (!sameLocation) return null
-
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
-            Log.d(TAG, "Loaded cached weather: ${resp.forecast.size} forecast days, ${resp.hourly.size} hourly items")
+            Log.d(TAG, "Loaded cached weather for $normKey with ${resp.forecast.size} forecast days")
 
             WeatherUiState.Success(
                 temperature = resp.temperature,
@@ -70,8 +82,8 @@ class WeatherRepository(context: Context) {
                 lastUpdatedText = updatedText
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing cached weather", e)
-            prefs.edit { clear() }
+            Log.e(TAG, "Error parsing cached weather for $normKey", e)
+            prefs.edit { remove(jsonKey); remove(timeKey) }
             null
         }
     }
@@ -80,13 +92,13 @@ class WeatherRepository(context: Context) {
         try {
             if (response.status == "OK" && response.temperature != null) {
                 val cached = CachedWeather(response, System.currentTimeMillis(), lat, lon)
+                val jsonKey = getCacheKeyData(lat, lon)
+                val timeKey = getCacheKeyTimestamp(lat, lon)
                 prefs.edit {
-                    putString(KEY_DATA, gson.toJson(cached))
-                    putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+                    putString(jsonKey, gson.toJson(cached))
+                    putLong(timeKey, System.currentTimeMillis())
                 }
-                Log.d(TAG, "Saved weather cache: ${response.forecast?.size ?: 0} forecast days, ${response.hourly?.size ?: 0} hourly items")
-            } else {
-                prefs.edit { clear() }
+                Log.d(TAG, "Saved weather cache for ${getNormKey(lat, lon)}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving weather cache", e)
@@ -94,42 +106,62 @@ class WeatherRepository(context: Context) {
     }
 
     suspend fun fetchWeather(lat: Double, lon: Double): WeatherUiState {
-        return try {
-            val response = SecureBackendClient.service.getWeather(lat, lon)
-            Log.d(TAG, "Fetched weather status: ${response.status}, forecast count: ${response.forecast?.size ?: 0}, hourly count: ${response.hourly?.size ?: 0}")
-            if (response.status == "OK" && response.temperature != null) {
-                saveCache(response, lat, lon)
-                WeatherUiState.Success(
-                    temperature = response.temperature,
-                    apparentTemperature = respValOr(response.apparentTemperature, response.temperature),
-                    humidity = response.humidity ?: 50,
-                    windSpeed = response.windSpeed ?: 10.0,
-                    condition = response.condition ?: "Partly Cloudy",
-                    weatherCode = response.weatherCode ?: 2,
-                    sunrise = response.sunrise ?: "06:00 AM",
-                    sunset = response.sunset ?: "06:30 PM",
-                    forecast = response.forecast ?: emptyList(),
-                    hourly = response.hourly ?: emptyList(),
-                    isCached = false,
-                    lastUpdatedText = "LIVE"
-                )
-            } else {
-                WeatherUiState.Error(response.message ?: "Weather unavailable")
-            }
-        } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "Weather timeout", e)
-            WeatherUiState.Error("Weather server is waking up — please retry.")
-        } catch (e: HttpException) {
-            Log.e(TAG, "Weather HTTP error", e)
-            WeatherUiState.Error("Server error (HTTP ${e.code()}).")
-        } catch (e: IOException) {
-            Log.e(TAG, "Weather IO error", e)
-            WeatherUiState.Error("Network error. Check connection.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Weather unknown error", e)
-            WeatherUiState.Error(e.localizedMessage ?: "Weather unavailable")
-        }
-    }
+        val normKey = getNormKey(lat, lon)
+        Log.d(TAG, "[WEATHER REQUEST] lat=$lat lon=$lon normKey=$normKey")
 
-    private fun respValOr(a: Double?, b: Double): Double = a ?: b
+        getCached(lat, lon)?.let { return it }
+
+        val deferred = inFlightMutex.withLock {
+            inFlightRequests[normKey]?.let {
+                Log.d(TAG, "[WEATHER DEDUPLICATE] Reusing active in-flight request for $normKey")
+                return@withLock it
+            }
+
+            val newDeferred = CoroutineScope(Dispatchers.IO).async {
+                try {
+                    val response = SecureBackendClient.service.getWeather(lat, lon)
+                    Log.d(TAG, "[WEATHER UPSTREAM] status=${response.status} forecastCount=${response.forecast?.size ?: 0}")
+                    if (response.status == "OK" && response.temperature != null) {
+                        saveCache(response, lat, lon)
+                        WeatherUiState.Success(
+                            temperature = response.temperature,
+                            apparentTemperature = response.apparentTemperature ?: response.temperature,
+                            humidity = response.humidity ?: 50,
+                            windSpeed = response.windSpeed ?: 10.0,
+                            condition = response.condition ?: "Partly Cloudy",
+                            weatherCode = response.weatherCode ?: 2,
+                            sunrise = response.sunrise ?: "06:00 AM",
+                            sunset = response.sunset ?: "06:30 PM",
+                            forecast = response.forecast ?: emptyList(),
+                            hourly = response.hourly ?: emptyList(),
+                            isCached = false,
+                            lastUpdatedText = "LIVE"
+                        )
+                    } else {
+                        Log.w(TAG, "[WEATHER ERROR] status=${response.status} message=${response.message}")
+                        WeatherUiState.Error(response.message ?: "Weather unavailable")
+                    }
+                } catch (e: SocketTimeoutException) {
+                    Log.e(TAG, "[WEATHER ERROR] timeout", e)
+                    WeatherUiState.Error("Weather server is waking up — please retry.")
+                } catch (e: HttpException) {
+                    Log.e(TAG, "[WEATHER ERROR] http error ${e.code()}", e)
+                    WeatherUiState.Error("Server error (HTTP ${e.code()}).")
+                } catch (e: IOException) {
+                    Log.e(TAG, "[WEATHER ERROR] network io error", e)
+                    WeatherUiState.Error("Network error. Check connection.")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[WEATHER ERROR] unknown error", e)
+                    WeatherUiState.Error(e.localizedMessage ?: "Weather unavailable")
+                } finally {
+                    inFlightMutex.withLock {
+                        inFlightRequests.remove(normKey)
+                    }
+                }
+            }
+            inFlightRequests[normKey] = newDeferred
+            newDeferred
+        }
+        return deferred.await()
+    }
 }
