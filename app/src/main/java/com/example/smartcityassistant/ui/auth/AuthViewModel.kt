@@ -118,7 +118,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = AuthUiState.Error("All fields are required.")
             return
         }
-        if (pass != confirmPass) {
+
+        val passwordMatches = (pass == confirmPass)
+        Log.d("AuthDebug", "passwordLength=${pass.length}, confirmLength=${confirmPass.length}, passwordMatches=$passwordMatches")
+
+        if (!passwordMatches) {
             _uiState.value = AuthUiState.Error("Passwords do not match.")
             return
         }
@@ -166,7 +170,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = AuthUiState.Error("All fields are required.")
             return
         }
-        if (newPass != confirmPass) {
+        val passwordMatches = (newPass == confirmPass)
+        Log.d("AuthDebug", "newPasswordLength=${newPass.length}, confirmLength=${confirmPass.length}, passwordMatches=$passwordMatches")
+
+        if (!passwordMatches) {
             _uiState.value = AuthUiState.Error("Passwords do not match.")
             return
         }
