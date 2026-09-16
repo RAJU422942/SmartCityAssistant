@@ -18,5 +18,6 @@ data class AqiResponseDto(
     val nh3: Double?,
     val timeString: String?,
     val message: String?,
-    val source: String?
+    val source: String?,
+    val sourceLabel: String?
 )

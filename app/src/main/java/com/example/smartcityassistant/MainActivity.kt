@@ -2,6 +2,8 @@ package com.example.smartcityassistant
 
 import com.example.smartcityassistant.railway.*
 import com.example.smartcityassistant.aqi.*
+import com.example.smartcityassistant.transport.*
+import com.example.smartcityassistant.weather.*
 import com.example.smartcityassistant.ui.profile.*
 import com.example.smartcityassistant.ui.explore.*
 import com.example.smartcityassistant.ui.cityalerts.*
@@ -494,6 +496,216 @@ fun MainNavigation() {
     }
 }
 
+@Composable
+fun WeatherIcon(weatherCode: Int?, modifier: Modifier = Modifier) {
+    val (icon, tint) = when (weatherCode) {
+        0 -> Icons.Default.WbSunny to Color(0xFFFFA000) // Amber/Yellow
+        1, 2 -> Icons.Default.WbCloudy to Color(0xFFFFB300) // Partly cloudy
+        3 -> Icons.Default.Cloud to Color(0xFF78909C) // Overcast gray
+        45, 48 -> Icons.Default.Grain to Color(0xFF90A4AE) // Fog
+        51, 53, 55, 56, 57 -> Icons.Default.WaterDrop to Color(0xFF0288D1) // Drizzle
+        61, 63, 65, 66, 67 -> Icons.Default.WaterDrop to Color(0xFF1976D2) // Rain
+        71, 73, 75, 77, 85, 86 -> Icons.Default.AcUnit to Color(0xFF00ACC1) // Snow
+        80, 81, 82 -> Icons.Default.WaterDrop to Color(0xFF0288D1) // Rain showers
+        95, 96, 99 -> Icons.Default.FlashOn to Color(0xFF7B1FA2) // Thunderstorm
+        else -> Icons.Default.WbSunny to Color(0xFFFFA000)
+    }
+
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .background(tint.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+fun getWeatherConditionText(weatherCode: Int?): String {
+    return when (weatherCode) {
+        0 -> "Clear Sky"
+        1 -> "Mainly Clear"
+        2 -> "Partly Cloudy"
+        3 -> "Overcast"
+        45, 48 -> "Foggy"
+        51, 53, 55, 56, 57 -> "Drizzle"
+        61, 63, 65, 66, 67 -> "Rain"
+        71, 73, 75, 77 -> "Snow"
+        80, 81, 82 -> "Rain Showers"
+        85, 86 -> "Snow Showers"
+        95, 96, 99 -> "Thunderstorm"
+        else -> "Partly Cloudy"
+    }
+}
+
+@Composable
+fun LocalConditionsCard(
+    weatherState: WeatherUiState,
+    aqiState: AqiUiState,
+    onWeatherRetry: () -> Unit,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("LOCAL CONDITIONS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Weather Section
+            when (weatherState) {
+                is WeatherUiState.Loading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Connecting to weather service...", fontSize = 13.sp, color = Color.Gray)
+                    }
+                }
+                is WeatherUiState.Error -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onWeatherRetry() }.padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Weather unavailable (Tap to retry)", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Default.Refresh, contentDescription = "Retry", tint = PrimaryNavy, modifier = Modifier.size(18.dp))
+                    }
+                }
+                is WeatherUiState.Success -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            WeatherIcon(weatherCode = weatherState.weatherCode)
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${weatherState.temperature.toInt()}°C",
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryNavy
+                                    )
+                                }
+                                Text(
+                                    text = getWeatherConditionText(weatherState.weatherCode),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MainText
+                                )
+                                Text(
+                                    text = "Feels like ${weatherState.apparentTemperature.toInt()}°C",
+                                    fontSize = 12.sp,
+                                    color = SecondaryText
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = DividerColor)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Metrics Row (AQI + Humidity + Wind)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // AQI Mini Badge
+                        when (aqiState) {
+                            is AqiUiState.Success -> {
+                                val style = AqiClassification.getStyle(aqiState.aqi)
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "AQI ${aqiState.aqi}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = style.textColor,
+                                            modifier = Modifier
+                                                .background(style.backgroundColor, RoundedCornerShape(6.dp))
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(aqiState.category, fontSize = 11.sp, color = SecondaryText, maxLines = 1)
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = aqiState.sourceLabel ?: if (aqiState.source == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                            is AqiUiState.NoNearby -> {
+                                Text("AQI unavailable nearby", fontSize = 12.sp, color = SecondaryText)
+                            }
+                            is AqiUiState.Error -> {
+                                Text("AQI unavailable", fontSize = 12.sp, color = SecondaryText)
+                            }
+                            is AqiUiState.Loading -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Loading AQI...", fontSize = 12.sp, color = SecondaryText)
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("💧", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("${weatherState.humidity}%", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("💨", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("${weatherState.windSpeed.toInt()} km/h", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = DividerColor)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Sun times
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("🌅 ${weatherState.sunrise}", fontSize = 12.sp, color = SecondaryText)
+                        Text("🌇 ${weatherState.sunset}", fontSize = 12.sp, color = SecondaryText)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @SuppressLint("MissingPermission")
 @Composable
 fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (String) -> Unit) {
@@ -510,6 +722,8 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
     val aqiState by aqiViewModel.uiState.collectAsState()
+    val weatherViewModel: WeatherViewModel = viewModel()
+    val weatherState by weatherViewModel.uiState.collectAsState()
 
     var fetchCurrentLocation: () -> Unit = {}
 
@@ -544,6 +758,7 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
                                 "Current location (${String.format("%.4f", loc.latitude)}, ${String.format("%.4f", loc.longitude)})"
                             }
                             aqiViewModel.loadAqi(loc.latitude, loc.longitude)
+                            weatherViewModel.loadWeather(loc.latitude, loc.longitude)
                         }
                     } else {
                         locationText = "Location unavailable"
@@ -606,6 +821,7 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
                                     showSearchDialog = false
                                     searchQuery = ""
                                     aqiViewModel.loadAqi(addr.latitude, addr.longitude)
+                                    weatherViewModel.loadWeather(addr.latitude, addr.longitude)
                                 } else {
                                     Toast.makeText(context, "Location not found", Toast.LENGTH_SHORT).show()
                                 }
@@ -639,8 +855,10 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
                 .background(PrimaryNavy)
                 .padding(20.dp)
         ) {
-            Text("Smart City", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(10.dp))
+            Text("Smart City", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("Safer People • Cleaner City • Better Tomorrow", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(12.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
@@ -684,40 +902,66 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
         }
 
         Column(modifier = Modifier.padding(20.dp).verticalScroll(scrollState)) {
-            AqiCard(uiState = aqiState) {
+            LocalConditionsCard(
+                weatherState = weatherState,
+                aqiState = aqiState,
+                onWeatherRetry = { weatherViewModel.retry() }
+            ) {
                 onNavigate("aqi_details")
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Emergency Button
-            Button(
+            // Emergency Card
+            Card(
                 onClick = { onNavigate("emergency") },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                shape = RoundedCornerShape(8.dp)
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.Emergency, contentDescription = null, tint = Color.White)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("EMERGENCY", color = Color.White, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = ErrorRed.copy(alpha = 0.12f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Emergency, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Emergency", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("Police • Ambulance • Fire", fontSize = 12.sp, color = SecondaryText)
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = ErrorRed)
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            Text("City Services", fontWeight = FontWeight.Bold, color = MainText, fontSize = 16.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Grid of Modules
             val modules = listOf(
-                ModuleData("Report Problem", "Garbage • Road • Water", Icons.Default.Report, "report"),
-                ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport"),
-                ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby"),
-                ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government"),
-                ModuleData("City Alerts", "Local notifications", Icons.Default.Notifications, "city_alerts"),
-                ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints"),
-                ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant")
+                ModuleData("Report Problem", "Garbage • Road • Streetlight", Icons.Default.Report, "report", Color(0xFFE53935)),
+                ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport", Color(0xFF1E88E5)),
+                ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby", Color(0xFF00897B)),
+                ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
+                ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
+                ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
+                ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
             )
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                modifier = Modifier.height(500.dp),
+                modifier = Modifier.height(456.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 userScrollEnabled = false
@@ -726,31 +970,71 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
                     ModuleCard(module) { onNavigate(module.target) }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Civic Message Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = Color(0xFFE8F5E9),
+                        shape = CircleShape,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Together for a Cleaner City", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = PrimaryNavy)
+                        Text("Report • Participate • Improve", fontSize = 11.sp, color = SecondaryText)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
 
-data class ModuleData(val title: String, val subtitle: String, val icon: ImageVector, val target: String)
+data class ModuleData(val title: String, val subtitle: String, val icon: ImageVector, val target: String, val accentColor: Color)
 
 @Composable
 fun ModuleCard(module: ModuleData, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(105.dp)
             .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(14.dp),
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(module.icon, contentDescription = null, tint = PrimaryNavy, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(module.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MainText)
-            Text(module.subtitle, color = SecondaryText, fontSize = 11.sp)
+            Surface(
+                color = module.accentColor.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(module.icon, contentDescription = null, tint = module.accentColor, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(module.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText, maxLines = 1)
+            Text(module.subtitle, color = SecondaryText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1655,7 +1939,17 @@ fun TransportScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 categories.take(2).forEach { (id, label, icon) ->
                     TransportCategoryCard(Modifier.weight(1f), label, icon) {
-                        baseLocation?.let { onCategoryClick(id, it) } ?: Toast.makeText(context, "Please select a starting point", Toast.LENGTH_SHORT).show()
+                        if (id == "parking") {
+                            val lat = baseLocation?.latitude ?: 25.5941
+                            val lon = baseLocation?.longitude ?: 85.1376
+                            GoogleMapsLauncher.launchGoogleMapsSearch(context, "parking near $lat,$lon")
+                        } else if (id == "ev") {
+                            val lat = baseLocation?.latitude ?: 25.5941
+                            val lon = baseLocation?.longitude ?: 85.1376
+                            GoogleMapsLauncher.launchGoogleMapsSearch(context, "EV charging station near $lat,$lon")
+                        } else {
+                            baseLocation?.let { onCategoryClick(id, it) } ?: Toast.makeText(context, "Please select a starting point", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -1663,7 +1957,17 @@ fun TransportScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 categories.drop(2).forEach { (id, label, icon) ->
                     TransportCategoryCard(Modifier.weight(1f), label, icon) {
-                        baseLocation?.let { onCategoryClick(id, it) } ?: Toast.makeText(context, "Please select a starting point", Toast.LENGTH_SHORT).show()
+                        if (id == "parking") {
+                            val lat = baseLocation?.latitude ?: 25.5941
+                            val lon = baseLocation?.longitude ?: 85.1376
+                            GoogleMapsLauncher.launchGoogleMapsSearch(context, "parking near $lat,$lon")
+                        } else if (id == "ev") {
+                            val lat = baseLocation?.latitude ?: 25.5941
+                            val lon = baseLocation?.longitude ?: 85.1376
+                            GoogleMapsLauncher.launchGoogleMapsSearch(context, "EV charging station near $lat,$lon")
+                        } else {
+                            baseLocation?.let { onCategoryClick(id, it) } ?: Toast.makeText(context, "Please select a starting point", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -3003,23 +3307,69 @@ fun RailwayResultCard(train: Train, onClick: () -> Unit) {
     }
 }
 
-// --- Placeholder for other modules ---
+// --- Parking & EV Charging Modules (Google Maps URL approach) ---
 @Composable
 fun ParkingModuleScreen(baseLocation: TransportLocation?, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val lat = baseLocation?.latitude ?: 25.5941
+    val lon = baseLocation?.longitude ?: 85.1376
+
+    LaunchedEffect(baseLocation) {
+        GoogleMapsLauncher.launchGoogleMapsSearch(context, "parking near $lat,$lon")
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
         TopAppBar(title = "Parking Locations", onBack)
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Nearby parking info will appear here")
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.LocalParking, null, tint = SecondaryBlue, modifier = Modifier.size(64.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Opening Google Maps for nearby parking...", fontWeight = FontWeight.Bold, color = PrimaryNavy, fontSize = 16.sp, textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(8.dp))
+                baseLocation?.let {
+                    Text("Search Center: ${it.name}", fontSize = 13.sp, color = SecondaryText)
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { GoogleMapsLauncher.launchGoogleMapsSearch(context, "parking near $lat,$lon") },
+                    colors = ButtonDefaults.buttonColors(containerColor = SecondaryBlue)
+                ) {
+                    Text("Open Parking in Google Maps")
+                }
+            }
         }
     }
 }
 
 @Composable
 fun EVChargingModuleScreen(baseLocation: TransportLocation?, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val lat = baseLocation?.latitude ?: 25.5941
+    val lon = baseLocation?.longitude ?: 85.1376
+
+    LaunchedEffect(baseLocation) {
+        GoogleMapsLauncher.launchGoogleMapsSearch(context, "EV charging station near $lat,$lon")
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
         TopAppBar(title = "EV Charging", onBack)
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Nearby EV stations will appear here")
+        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.EvStation, null, tint = SecondaryBlue, modifier = Modifier.size(64.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Opening Google Maps for EV charging stations...", fontWeight = FontWeight.Bold, color = PrimaryNavy, fontSize = 16.sp, textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(8.dp))
+                baseLocation?.let {
+                    Text("Search Center: ${it.name}", fontSize = 13.sp, color = SecondaryText)
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { GoogleMapsLauncher.launchGoogleMapsSearch(context, "EV charging station near $lat,$lon") },
+                    colors = ButtonDefaults.buttonColors(containerColor = SecondaryBlue)
+                ) {
+                    Text("Open EV Charging in Google Maps")
+                }
+            }
         }
     }
 }

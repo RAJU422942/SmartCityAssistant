@@ -124,7 +124,7 @@ fun AqiDetailsScreen(
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Source: ${state.source ?: "Central Pollution Control Board (CPCB)"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0D2B4E))
+                            Text("Source: ${state.sourceLabel ?: if (state.source == "OPEN_METEO") "Open-Meteo • CAMS" else "Central Pollution Control Board (CPCB)"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0D2B4E))
                             Spacer(modifier = Modifier.height(4.dp))
                             Text("Last updated: ${state.timeString ?: state.lastUpdatedText}", fontSize = 12.sp, color = Color.Gray)
                         }

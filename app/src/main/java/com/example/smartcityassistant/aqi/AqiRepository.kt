@@ -37,7 +37,6 @@ class AqiRepository(context: Context) {
             val cached = gson.fromJson(json, CachedAqi::class.java)
             val resp = cached.response
 
-            // Never return or keep a persisted negative/error/non-OK state; automatically invalidate/delete it.
             if (resp.status != "OK" || resp.aqi == null) {
                 prefs.edit {
                     remove(KEY_AQI_DATA)
@@ -56,6 +55,8 @@ class AqiRepository(context: Context) {
             val style = AqiClassification.getStyle(aqiVal)
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
+            val src = resp.source ?: "CPCB"
+            val srcLabel = resp.sourceLabel ?: if (src == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station"
 
             AqiUiState.Success(
                 aqi = aqiVal,
@@ -71,7 +72,8 @@ class AqiRepository(context: Context) {
                 no2 = resp.no2,
                 o3 = resp.o3,
                 timeString = resp.timeString,
-                source = resp.source ?: "CPCB",
+                source = src,
+                sourceLabel = srcLabel,
                 isCached = isExpired,
                 lastUpdatedText = updatedText,
             )
@@ -93,7 +95,6 @@ class AqiRepository(context: Context) {
                     putLong(KEY_TIMESTAMP, System.currentTimeMillis())
                 }
             } else {
-                // Never save NO_NEARBY_AQI_STATION, UNAVAILABLE, or error states to SharedPreferences.
                 prefs.edit {
                     remove(KEY_AQI_DATA)
                     remove(KEY_TIMESTAMP)
@@ -113,6 +114,8 @@ class AqiRepository(context: Context) {
                     if (resp.aqi != null) {
                         val aqiVal = resp.aqi
                         val style = AqiClassification.getStyle(aqiVal)
+                        val src = resp.source ?: "CPCB"
+                        val srcLabel = resp.sourceLabel ?: if (src == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station"
                         Result.success(
                             AqiUiState.Success(
                                 aqi = aqiVal,
@@ -128,7 +131,8 @@ class AqiRepository(context: Context) {
                                 no2 = resp.no2,
                                 o3 = resp.o3,
                                 timeString = resp.timeString,
-                                source = resp.source ?: "CPCB",
+                                source = src,
+                                sourceLabel = srcLabel,
                                 isCached = false,
                                 lastUpdatedText = "LIVE"
                             )

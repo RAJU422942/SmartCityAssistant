@@ -6,16 +6,10 @@ export class RailwayController {
     try {
       const { trainNumber } = req.params;
       const { date } = req.query;
-
-      if (!trainNumber || !/^\d+$/.test(trainNumber)) {
-        return res.status(400).json({ status: 'ERROR', message: 'Invalid train number' });
+      if (!trainNumber) {
+        return res.status(400).json({ status: 'ERROR', message: 'Train number is required' });
       }
-
-      if (!date || typeof date !== 'string') {
-        return res.status(400).json({ status: 'ERROR', message: 'Journey date (DD-MM-YYYY) is required' });
-      }
-
-      const result = await railwayProviderService.getLiveStatus(trainNumber, date);
+      const result = await railwayProviderService.getLiveStatus(trainNumber, (date as string) || '');
       return res.json(result);
     } catch (error) {
       next(error);
@@ -25,11 +19,9 @@ export class RailwayController {
   async getPnrStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { pnr } = req.params;
-
-      if (!pnr || !/^\d{10}$/.test(pnr)) {
-        return res.status(400).json({ status: 'ERROR', message: 'Invalid 10-digit PNR number' });
+      if (!pnr || pnr.length !== 10) {
+        return res.status(400).json({ status: 'ERROR', message: 'Valid 10-digit PNR number is required' });
       }
-
       const result = await railwayProviderService.getPnrStatus(pnr);
       return res.json(result);
     } catch (error) {
@@ -40,21 +32,16 @@ export class RailwayController {
   async getSeatAvailability(req: Request, res: Response, next: NextFunction) {
     try {
       const { train, from, to, date, class: trainClass, quota } = req.query;
-
-      if (!train || !from || !to || !date || !trainClass || !quota) {
-        return res.status(400).json({
-          status: 'ERROR',
-          message: 'Missing required query parameters: train, from, to, date, class, quota'
-        });
+      if (!train || !from || !to || !date) {
+        return res.status(400).json({ status: 'ERROR', message: 'Missing required query parameters (train, from, to, date)' });
       }
-
       const result = await railwayProviderService.getSeatAvailability(
         train as string,
         from as string,
         to as string,
         date as string,
-        trainClass as string,
-        quota as string
+        (trainClass as string) || '3A',
+        (quota as string) || 'GN'
       );
       return res.json(result);
     } catch (error) {
@@ -65,6 +52,9 @@ export class RailwayController {
   async getTrainInfo(req: Request, res: Response, next: NextFunction) {
     try {
       const { trainNumber } = req.params;
+      if (!trainNumber) {
+        return res.status(400).json({ status: 'ERROR', message: 'Train number is required' });
+      }
       const result = await railwayProviderService.getTrainInfo(trainNumber);
       return res.json(result);
     } catch (error) {
@@ -76,6 +66,9 @@ export class RailwayController {
     try {
       const { from, to } = req.params;
       const { date } = req.query;
+      if (!from || !to) {
+        return res.status(400).json({ status: 'ERROR', message: 'From and To station codes are required' });
+      }
       const result = await railwayProviderService.getTrainsBetween(from, to, (date as string) || '');
       return res.json(result);
     } catch (error) {
@@ -116,26 +109,13 @@ export class RailwayController {
     }
   }
 
-  async getParking(req: Request, res: Response, next: NextFunction) {
+  async getWeather(req: Request, res: Response, next: NextFunction) {
     try {
       const { lat, lon } = req.query;
       if (!lat || !lon) {
         return res.status(400).json({ status: 'ERROR', message: 'Latitude and longitude are required' });
       }
-      const result = await railwayProviderService.getParking(lat as string, lon as string);
-      return res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getEvCharging(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { lat, lon } = req.query;
-      if (!lat || !lon) {
-        return res.status(400).json({ status: 'ERROR', message: 'Latitude and longitude are required' });
-      }
-      const result = await railwayProviderService.getEvCharging(lat as string, lon as string);
+      const result = await railwayProviderService.getWeather(lat as string, lon as string);
       return res.json(result);
     } catch (error) {
       next(error);

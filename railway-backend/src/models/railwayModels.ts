@@ -65,22 +65,21 @@ export interface BackendAqiResponse {
   timeString: string | null;
   message?: string | null;
   source?: string | null;
+  sourceLabel?: string | null;
 }
 
-export interface TransportPoiItem {
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  distanceKm: number;
-  status?: string;
-  source?: string;
-}
-
-export interface TransportPoiResponse {
+export interface BackendWeatherResponse {
   status: string;
-  results: TransportPoiItem[];
-  message?: string;
+  temperature: number | null;
+  apparentTemperature: number | null;
+  humidity: number | null;
+  windSpeed: number | null;
+  condition: string | null;
+  weatherCode: number | null;
+  sunrise: string | null;
+  sunset: string | null;
+  source: string | null;
+  message?: string | null;
 }
 
 export interface UnavailableResponse {

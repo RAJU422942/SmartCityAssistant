@@ -105,3 +105,17 @@ data class BackendTrainResponse(
     val status: String?,
     val classes: List<String>?
 )
+
+data class WeatherResponseDto(
+    val status: String,
+    val temperature: Double?,
+    val apparentTemperature: Double?,
+    val humidity: Int?,
+    val windSpeed: Double?,
+    val condition: String?,
+    val weatherCode: Int?,
+    val sunrise: String?,
+    val sunset: String?,
+    val source: String?,
+    val message: String?
+)
