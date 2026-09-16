@@ -1,3 +1,6 @@
+import { find as findTimeZone } from 'geo-tz';
+import SunCalc from 'suncalc';
+
 interface StationInfo {
   code: string;
   name: string;
@@ -60,54 +63,35 @@ function mapMetSymbolToWeather(symbolCode: string): { condition: string; weather
   return { condition: 'Partly Cloudy', weatherCode: 2 };
 }
 
-function getTimezoneOffsetMinutes(lon: number): number {
-  if (lon > 68 && lon < 98) return 330; // IST UTC +5:30
-  if (lon > -10 && lon < 2) return 0; // GMT/UTC
-  if (lon >= 2 && lon < 25) return 60; // CET UTC +1
-  if (lon >= 25 && lon < 45) return 120; // EET
-  if (lon >= -125 && lon < -100) return -480; // PST UTC -8
-  if (lon >= -100 && lon < -80) return -360; // CST UTC -6
-  if (lon >= -80 && lon < -65) return -300; // EST UTC -5
-  return Math.round(lon / 15) * 60;
-}
-
 function calculateSunriseSunset(lat: number, lon: number, date: Date = new Date()): { sunrise: string; sunset: string } {
   try {
-    const doy = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
-    const declination = 23.45 * Math.sin((2 * Math.PI / 365) * (doy - 81));
-    const latRad = lat * (Math.PI / 180);
-    const decRad = declination * (Math.PI / 180);
+    const timeZones = findTimeZone(lat, lon);
+    const timeZone = timeZones[0] || 'UTC';
 
-    const cosH = -Math.tan(latRad) * Math.tan(decRad);
-    if (cosH < -1) return { sunrise: "05:30 AM", sunset: "08:30 PM" };
-    if (cosH > 1) return { sunrise: "07:30 AM", sunset: "03:30 PM" };
+    const times = SunCalc.getTimes(date, lat, lon);
+    const sunriseUtc = times.sunrise;
+    const sunsetUtc = times.sunset;
 
-    const H = Math.acos(cosH) * (180 / Math.PI);
-    const solarNoonUtc = 12 - (lon / 15);
-    const sunriseUtc = solarNoonUtc - (H / 15);
-    const sunsetUtc = solarNoonUtc + (H / 15);
+    if (!sunriseUtc || !sunsetUtc) {
+      return { sunrise: "05:32 AM", sunset: "05:49 PM" };
+    }
 
-    const offsetMinutes = getTimezoneOffsetMinutes(lon);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
 
-    const sunriseLocalHour = (sunriseUtc + offsetMinutes / 60 + 24) % 24;
-    const sunsetLocalHour = (sunsetUtc + offsetMinutes / 60 + 24) % 24;
+    const sunrise = formatter.format(sunriseUtc);
+    const sunset = formatter.format(sunsetUtc);
 
-    const formatHourDecimal = (decimalHour: number) => {
-      const h = Math.floor(decimalHour);
-      const m = Math.floor((decimalHour - h) * 60);
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const h12 = h % 12 === 0 ? 12 : h % 12;
-      return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
-    };
+    console.log(`[WEATHER SUN] date=${date.toISOString().split('T')[0]} timezone=${timeZone} sunriseUtc=${sunriseUtc.toISOString()} sunriseLocal=${sunrise} sunsetUtc=${sunsetUtc.toISOString()} sunsetLocal=${sunset}`);
 
-    const res = {
-      sunrise: formatHourDecimal(sunriseLocalHour),
-      sunset: formatHourDecimal(sunsetLocalHour)
-    };
-    console.log(`[WEATHER TIME] rawUtc=sunrise:${sunriseUtc.toFixed(2)} timezone=UTC+${(offsetMinutes/60).toFixed(1)} localTime=sunrise:${res.sunrise} sunset:${res.sunset}`);
-    return res;
-  } catch {
-    return { sunrise: "06:26 AM", sunset: "06:42 PM" };
+    return { sunrise, sunset };
+  } catch (e: any) {
+    console.log(`[WEATHER SUN ERROR] error=${e.message}`);
+    return { sunrise: "05:32 AM", sunset: "05:49 PM" };
   }
 }
 
@@ -415,7 +399,10 @@ export class RailwayProviderService {
     const normLat = userLat.toFixed(4);
     const normLon = userLon.toFixed(4);
     const normKey = `${normLat}_${normLon}`;
-    const offsetMinutes = getTimezoneOffsetMinutes(userLon);
+
+    const timeZones = findTimeZone(userLat, userLon);
+    const timeZone = timeZones[0] || 'UTC';
+    console.log(`[WEATHER TIMEZONE] lat=${userLat} lon=${userLon} timezone=${timeZone}`);
 
     console.log(`[WEATHER REQUEST] requestId=${requestId} lat=${lat} lon=${lon}`);
     console.log(`[METNO FETCH] requestId=${requestId} cacheKey=${normKey}`);
@@ -492,6 +479,26 @@ export class RailwayProviderService {
                            'clearsky_day';
         const { condition, weatherCode } = mapMetSymbolToWeather(symbolCode);
 
+        const hourFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          hour: 'numeric',
+          hour12: true
+        });
+
+        const dateFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+
+        const dayNameFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        });
+
         const hourlyList: any[] = [];
         for (const ts of timeseries) {
           const tIso = ts.time;
@@ -504,13 +511,10 @@ export class RailwayProviderService {
           const hCode = mapMetSymbolToWeather(sym).weatherCode;
           const precipProb = ts.data.next_1_hours?.details?.precipitation_amount ?? 0;
 
-          let hourFormatted = tIso;
-          try {
-            const localMs = new Date(tIso).getTime() + offsetMinutes * 60 * 1000;
-            const dt = new Date(localMs);
-            hourFormatted = dt.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: 'UTC' });
-            console.log(`[WEATHER TIME] rawUtc=${tIso} timezone=UTC+${(offsetMinutes/60).toFixed(1)} localTime=${hourFormatted}`);
-          } catch {}
+          const dateObj = new Date(tIso);
+          const hourFormatted = hourFormatter.format(dateObj);
+
+          console.log(`[WEATHER TIME CONVERSION] utc=${tIso} local=${hourFormatted}`);
 
           hourlyList.push({
             time: tIso,
@@ -527,20 +531,22 @@ export class RailwayProviderService {
         const dailyMap = new Map<string, { temps: number[]; symbols: string[]; precip: number[] }>();
         for (const ts of timeseries) {
           const tIso = ts.time;
-          // Apply timezone offset to date grouping so calendar day is correct in local time
-          const localMs = new Date(tIso).getTime() + offsetMinutes * 60 * 1000;
-          const localDateObj = new Date(localMs);
-          const dateStr = localDateObj.toISOString().split('T')[0];
+          const dateObj = new Date(tIso);
+          const parts = dateFormatter.formatToParts(dateObj);
+          const year = parts.find(p => p.type === 'year')?.value || '2026';
+          const month = parts.find(p => p.type === 'month')?.value || '09';
+          const day = parts.find(p => p.type === 'day')?.value || '16';
+          const localDateStr = `${year}-${month}-${day}`;
 
           const temp = ts.data.instant.details.air_temperature;
           const sym = ts.data.next_1_hours?.summary?.symbol_code || ts.data.next_6_hours?.summary?.symbol_code || 'clearsky_day';
           const precip = ts.data.next_1_hours?.details?.precipitation_amount ?? 0;
 
           if (temp !== undefined && temp !== null) {
-            if (!dailyMap.has(dateStr)) {
-              dailyMap.set(dateStr, { temps: [], symbols: [], precip: [] });
+            if (!dailyMap.has(localDateStr)) {
+              dailyMap.set(localDateStr, { temps: [], symbols: [], precip: [] });
             }
-            const entry = dailyMap.get(dateStr)!;
+            const entry = dailyMap.get(localDateStr)!;
             entry.temps.push(temp);
             entry.symbols.push(sym);
             entry.precip.push(precip);
@@ -557,8 +563,8 @@ export class RailwayProviderService {
           const { condition: dCond, weatherCode: dCode } = mapMetSymbolToWeather(dominantSym);
           const maxPrecip = Math.max(...dataEntry.precip);
 
-          const dateObj = new Date(dateStr);
-          const dayName = dayIndex === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+          const refDate = new Date(`${dateStr}T12:00:00Z`);
+          const dayName = dayIndex === 0 ? 'Today' : dayNameFormatter.format(refDate);
           dayIndex++;
 
           forecast.push({
