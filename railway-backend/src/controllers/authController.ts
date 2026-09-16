@@ -45,8 +45,14 @@ export const login = async (req: AuthenticatedRequest, res: Response): Promise<v
 };
 
 export const logout = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  // Stateless JWT logout is handled client-side by clearing token, but endpoint confirms success
-  res.json({ status: 'SUCCESS', message: 'Logged out successfully.' });
+  try {
+    if (req.user && req.user.id) {
+      await AuthService.logoutUser(req.user.id);
+    }
+    res.json({ status: 'SUCCESS', message: 'Logged out successfully.' });
+  } catch (error: any) {
+    res.status(500).json({ status: 'ERROR', message: 'Logout failed.' });
+  }
 };
 
 export const getMe = async (req: AuthenticatedRequest, res: Response): Promise<void> => {

@@ -31,10 +31,14 @@ db.serialize(() => {
       phoneVerified INTEGER DEFAULT 0,
       emailOtp TEXT,
       emailOtpExpires INTEGER,
+      emailOtpAttempts INTEGER DEFAULT 0,
       phoneOtp TEXT,
       phoneOtpExpires INTEGER,
+      phoneOtpAttempts INTEGER DEFAULT 0,
       resetOtp TEXT,
       resetOtpExpires INTEGER,
+      resetOtpAttempts INTEGER DEFAULT 0,
+      tokenVersion INTEGER DEFAULT 0,
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `, (err) => {
@@ -42,6 +46,16 @@ db.serialize(() => {
       console.error('[Database]: Error creating users table', err.message);
     } else {
       console.log('[Database]: Users table verified/created successfully');
+
+      const columnsToAdd = [
+        "ALTER TABLE users ADD COLUMN emailOtpAttempts INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN phoneOtpAttempts INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN resetOtpAttempts INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN tokenVersion INTEGER DEFAULT 0"
+      ];
+      columnsToAdd.forEach(sql => {
+        db.run(sql, () => {});
+      });
     }
   });
 });
