@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,7 +27,37 @@ fun ExploreScreen(
     viewModel: ExploreViewModel,
     onNavigate: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showClearDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadRecentServices(context)
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Clear Recently Used", fontWeight = FontWeight.Bold, color = Color(0xFF0D2B4E)) },
+            text = { Text("Clear recently used services?", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearRecent(context)
+                        showClearDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) {
+                    Text("Clear", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -83,6 +114,64 @@ fun ExploreScreen(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                     )
                 )
+            }
+
+            // Recently Used Section (Hidden if search query is active)
+            if (uiState.searchQuery.isBlank()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recently Used",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color(0xFF0D2B4E)
+                            )
+                            if (uiState.recentServices.isNotEmpty()) {
+                                TextButton(onClick = { showClearDialog = true }) {
+                                    Text("Clear", color = Color(0xFF1E88E5), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                if (uiState.recentServices.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Your recently opened services will appear here.",
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                } else {
+                                    uiState.recentServices.forEachIndexed { index, service ->
+                                        ExploreServiceRow(service = service, onClick = { onNavigate(service.route) })
+                                        if (index < uiState.recentServices.size - 1) {
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Quick Access Section (Hidden if search query is active and doesn't match)
@@ -210,6 +299,11 @@ fun ExploreServiceRow(
         "local_hospital" -> Icons.Default.LocalHospital
         "air" -> Icons.Default.Air
         "emergency" -> Icons.Default.Emergency
+        "navigation" -> Icons.Default.Navigation
+        "wb_sunny" -> Icons.Default.WbSunny
+        "phone" -> Icons.Default.Phone
+        "folder" -> Icons.Default.Folder
+        "smart_toy" -> Icons.Default.SmartToy
         else -> Icons.Default.Star
     }
 

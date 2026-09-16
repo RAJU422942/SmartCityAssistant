@@ -17,5 +17,6 @@ data class ExploreCategorySection(
 data class ExploreUiState(
     val searchQuery: String = "",
     val categories: List<ExploreCategorySection> = emptyList(),
-    val filteredCategories: List<ExploreCategorySection> = emptyList()
+    val filteredCategories: List<ExploreCategorySection> = emptyList(),
+    val recentServices: List<ExploreService> = emptyList()
 )

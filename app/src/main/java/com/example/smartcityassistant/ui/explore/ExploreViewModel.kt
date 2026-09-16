@@ -1,5 +1,6 @@
 package com.example.smartcityassistant.ui.explore
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +48,16 @@ class ExploreViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(ExploreUiState(categories = allCategories, filteredCategories = allCategories))
     val uiState: StateFlow<ExploreUiState> = _uiState.asStateFlow()
+
+    fun loadRecentServices(context: Context) {
+        val recents = RecentServicesRepository.getRecentServices(context)
+        _uiState.update { it.copy(recentServices = recents) }
+    }
+
+    fun clearRecent(context: Context) {
+        RecentServicesRepository.clearRecentServices(context)
+        loadRecentServices(context)
+    }
 
     fun onSearchQueryChanged(query: String) {
         _uiState.update { state ->
