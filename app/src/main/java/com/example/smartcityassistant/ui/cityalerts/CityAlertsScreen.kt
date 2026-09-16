@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.smartcityassistant.aqi.AqiUiState
 import com.example.smartcityassistant.data.cityalerts.CityAlert
+import com.example.smartcityassistant.weather.WeatherUiState
 import com.google.android.gms.location.LocationServices
 
 @SuppressLint("MissingPermission")
@@ -69,22 +71,22 @@ fun CityAlertsScreen(
     if (showSearchDialog) {
         AlertDialog(
             onDismissRequest = { showSearchDialog = false },
-            title = { Text("Search Location", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            title = { Text("Search Location", fontWeight = FontWeight.Bold, color = Color(0xFF0D2B45)) },
             text = {
                 Column {
-                    Text("Enter city, district or area (e.g., Patna, Delhi, Mumbai):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Enter city, district or area (e.g., Delhi, Ahmedabad, Darbhanga, Mehsana, Patna, Mumbai):", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("City / Area") },
+                        placeholder = { Text("Search location") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            focusedTextColor = Color(0xFF0D2B45),
+                            unfocusedTextColor = Color(0xFF0D2B45),
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
                         )
                     )
                 }
@@ -98,14 +100,14 @@ fun CityAlertsScreen(
                             searchQuery = ""
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D2B4E))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))
                 ) {
                     Text("SEARCH")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSearchDialog = false }) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Cancel", color = Color.Gray)
                 }
             }
         )
@@ -114,12 +116,12 @@ fun CityAlertsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color(0xFFF5F7FA))
     ) {
         // Top App Bar & Location Header
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF0D2B4E),
+            color = Color(0xFF0D2B45),
             shadowElevation = 4.dp
         ) {
             Column(
@@ -134,7 +136,7 @@ fun CityAlertsScreen(
                     Text("City Alerts", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Local disaster, weather & air quality updates", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
+                Text("Professional civic alert center", color = Color.White.copy(alpha = 0.8f), fontSize = 13.sp)
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -145,21 +147,33 @@ fun CityAlertsScreen(
                     color = Color.White.copy(alpha = 0.15f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f).clickable { showSearchDialog = true }
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { showSearchDialog = true }
                         ) {
                             Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            val locTitle = (uiState as? CityAlertsUiState.Success)?.locationName ?: "Madhuban, Bihar"
-                            val locType = if ((uiState as? CityAlertsUiState.Success)?.isUsingCustomLocation == true) "Selected location" else "Current location"
+                            val locationTitle = when (uiState) {
+                                is CityAlertsUiState.Success -> (uiState as CityAlertsUiState.Success).selectedLocation.name
+                                is CityAlertsUiState.Error -> (uiState as CityAlertsUiState.Error).selectedLocation?.name ?: "Search location"
+                                else -> "Search location"
+                            }
+                            val locationSourceText = when (uiState) {
+                                is CityAlertsUiState.Success -> {
+                                    if ((uiState as CityAlertsUiState.Success).selectedLocation.source == LocationSource.CURRENT_LOCATION)
+                                        "Current Location" else "Search Location"
+                                }
+                                else -> "Tap to search or select location"
+                            }
                             Column {
-                                Text(locTitle, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text(locType, color = Color.White.copy(alpha = 0.7f), fontSize = 10.sp)
+                                Text(locationTitle, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(locationSourceText, color = Color.White.copy(alpha = 0.7f), fontSize = 10.sp)
                             }
                         }
 
@@ -202,37 +216,41 @@ fun CityAlertsScreen(
             }
         }
 
-        // Category Filter Chips
+        // Horizontally Scrollable Category Filter Tabs
+        val selectedCategory = (uiState as? CityAlertsUiState.Success)?.selectedCategory
+        val selectedIndex = when (selectedCategory) {
+            null -> 0
+            "WEATHER" -> 1
+            "DISASTER" -> 2
+            "AIR_QUALITY" -> 3
+            else -> 0
+        }
+
         ScrollableTabRow(
-            selectedTabIndex = when ((uiState as? CityAlertsUiState.Success)?.selectedCategory) {
-                null -> 0
-                "WEATHER" -> 1
-                "DISASTER" -> 2
-                "AIR_QUALITY" -> 3
-                else -> 0
-            },
+            selectedTabIndex = selectedIndex,
             edgePadding = 16.dp,
             containerColor = Color.White,
-            contentColor = Color(0xFF0D2B4E)
+            contentColor = Color(0xFF0D2B45),
+            divider = {}
         ) {
             Tab(
-                selected = (uiState as? CityAlertsUiState.Success)?.selectedCategory == null,
-                onClick = { viewModel.loadAlerts(category = null) },
-                text = { Text("All Alerts", fontWeight = FontWeight.Bold) }
+                selected = selectedCategory == null,
+                onClick = { viewModel.setCategory(null) },
+                text = { Text("All", fontWeight = FontWeight.Bold) }
             )
             Tab(
-                selected = (uiState as? CityAlertsUiState.Success)?.selectedCategory == "WEATHER",
-                onClick = { viewModel.loadAlerts(category = "WEATHER") },
+                selected = selectedCategory == "WEATHER",
+                onClick = { viewModel.setCategory("WEATHER") },
                 text = { Text("Weather", fontWeight = FontWeight.Bold) }
             )
             Tab(
-                selected = (uiState as? CityAlertsUiState.Success)?.selectedCategory == "DISASTER",
-                onClick = { viewModel.loadAlerts(category = "DISASTER") },
+                selected = selectedCategory == "DISASTER",
+                onClick = { viewModel.setCategory("DISASTER") },
                 text = { Text("Disaster", fontWeight = FontWeight.Bold) }
             )
             Tab(
-                selected = (uiState as? CityAlertsUiState.Success)?.selectedCategory == "AIR_QUALITY",
-                onClick = { viewModel.loadAlerts(category = "AIR_QUALITY") },
+                selected = selectedCategory == "AIR_QUALITY",
+                onClick = { viewModel.setCategory("AIR_QUALITY") },
                 text = { Text("Air Quality", fontWeight = FontWeight.Bold) }
             )
         }
@@ -243,21 +261,43 @@ fun CityAlertsScreen(
                 .padding(16.dp)
         ) {
             when (val state = uiState) {
+                is CityAlertsUiState.Unselected -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                            Icon(Icons.Default.LocationSearching, contentDescription = null, tint = Color(0xFF1976D2), modifier = Modifier.size(56.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Search location", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF0D2B45), textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Please search for a location or tap GPS to view real-time civic alerts, weather data, and air quality updates.", fontSize = 13.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = { showSearchDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Search location")
+                            }
+                        }
+                    }
+                }
                 is CityAlertsUiState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color(0xFF0D2B4E))
+                        CircularProgressIndicator(color = Color(0xFF0D2B45))
                     }
                 }
                 is CityAlertsUiState.Error -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                             Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text(state.message, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                            Text("Unable to update alerts. Tap to retry.", fontSize = 15.sp, color = Color(0xFF0D2B45), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(state.message, fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center)
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
-                                onClick = { viewModel.loadAlerts() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D2B4E))
+                                onClick = { state.selectedLocation?.let { viewModel.selectLocationAndLoad(it) } ?: run { showSearchDialog = true } },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D2B45))
                             ) {
                                 Text("Retry")
                             }
@@ -265,33 +305,124 @@ fun CityAlertsScreen(
                     }
                 }
                 is CityAlertsUiState.Success -> {
-                    if (state.alerts.isEmpty()) {
-                        val (title, subtitle) = when (state.selectedCategory) {
-                            "WEATHER" -> "No significant weather alerts" to "for this location"
-                            "DISASTER" -> "No nearby disaster alerts" to "No verified GDACS disaster events were found for this location."
-                            "AIR_QUALITY" -> "No air-quality alerts" to "for this location"
-                            else -> "No verified alerts for this location" to "All monitored services are operating normally."
-                        }
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-                                Icon(Icons.Default.NotificationsOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        val showWeather = state.selectedCategory == null || state.selectedCategory == "WEATHER"
+                        val showAirQuality = state.selectedCategory == null || state.selectedCategory == "AIR_QUALITY"
+                        val showDisaster = state.selectedCategory == null || state.selectedCategory == "DISASTER"
+
+                        // 1. Weather Section
+                        if (showWeather) {
+                            item {
+                                Text("WEATHER", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(state.alerts) { alert ->
-                                AlertCard(alert = alert)
                             }
                             item {
-                                Spacer(modifier = Modifier.height(24.dp))
+                                when (val wState = state.weatherState) {
+                                    is WeatherUiState.Success -> {
+                                        WeatherCard(wState)
+                                    }
+                                    is WeatherUiState.Error -> {
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                            Text("Weather unavailable: ${wState.message}", modifier = Modifier.padding(16.dp), fontSize = 13.sp, color = Color.Gray)
+                                        }
+                                    }
+                                    else -> {
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                            Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                            if (state.weatherAdvisories.isEmpty()) {
+                                item {
+                                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                        Text("No weather advisories right now.", modifier = Modifier.padding(16.dp), fontSize = 13.sp, color = Color.Gray)
+                                    }
+                                }
+                            } else {
+                                items(state.weatherAdvisories) { adv ->
+                                    AlertCard(alert = adv)
+                                }
+                            }
+                            item { Spacer(modifier = Modifier.height(8.dp)) }
+                        }
+
+                        // 2. Air Quality Section
+                        if (showAirQuality) {
+                            item {
+                                Text("AIR QUALITY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                            item {
+                                when (val aqiState = state.aqiState) {
+                                    is AqiUiState.Success -> {
+                                        AqiCompactCard(aqiState)
+                                    }
+                                    is AqiUiState.NoNearby -> {
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                            Text(aqiState.message, modifier = Modifier.padding(16.dp), fontSize = 13.sp, color = Color.Gray)
+                                        }
+                                    }
+                                    is AqiUiState.Error -> {
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                            Text("Air quality unavailable: ${aqiState.message}", modifier = Modifier.padding(16.dp), fontSize = 13.sp, color = Color.Gray)
+                                        }
+                                    }
+                                    else -> {
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                            Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (state.aqiAdvisories.isEmpty()) {
+                                item {
+                                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                        Text("No significant air quality alert.", modifier = Modifier.padding(16.dp), fontSize = 13.sp, color = Color.Gray)
+                                    }
+                                }
+                            } else {
+                                items(state.aqiAdvisories) { adv ->
+                                    AlertCard(alert = adv)
+                                }
+                            }
+                            item { Spacer(modifier = Modifier.height(8.dp)) }
+                        }
+
+                        // 3. Disaster Section
+                        if (showDisaster) {
+                            item {
+                                Text("DISASTER ALERTS (GDACS)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                            if (state.disasterAlerts.isEmpty()) {
+                                item {
+                                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.CheckCircleOutline, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(36.dp))
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text("No active disaster alerts near this location.", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0D2B45), textAlign = TextAlign.Center)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text("No verified GDACS disaster events found within 300 km.", fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center)
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(state.disasterAlerts) { alert ->
+                                    AlertCard(alert = alert)
+                                }
+                            }
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(24.dp))
                         }
                     }
                 }
@@ -301,25 +432,77 @@ fun CityAlertsScreen(
 }
 
 @Composable
-fun AlertCard(alert: CityAlert) {
-    val severityColor = when (alert.severity) {
-        "CRITICAL" -> Color(0xFFD32F2F)
-        "HIGH" -> Color(0xFFE65100)
-        "MODERATE" -> Color(0xFFF57C00)
-        else -> Color(0xFF1E88E5)
-    }
+fun WeatherCard(weather: WeatherUiState.Success) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("${weather.temperature.toInt()}°C", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D2B45))
+                    Text(weather.condition, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                }
+                Icon(Icons.Default.WbSunny, contentDescription = null, tint = Color(0xFFF57C00), modifier = Modifier.size(40.dp))
+            }
 
-    val categoryIcon = when (alert.category) {
-        "WEATHER" -> Icons.Default.WbSunny
-        "DISASTER" -> Icons.Default.Warning
-        "AIR_QUALITY" -> Icons.Default.Air
-        else -> Icons.Default.Notifications
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Feels like ${weather.apparentTemperature.toInt()}°C", fontSize = 12.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = Color(0xFFE0E0E0))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                WeatherMetricItem("Humidity", "${weather.humidity}%")
+                WeatherMetricItem("Wind", "${weather.windSpeed.toInt()} km/h")
+                val precip = weather.hourly.firstOrNull()?.precipitationProbability?.toInt() ?: 0
+                WeatherMetricItem("Rain Prob", "$precip%")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = Color(0xFFE0E0E0))
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Source: MET Norway", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                Text(weather.lastUpdatedText, fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+fun WeatherMetricItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, fontSize = 11.sp, color = Color.Gray)
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0D2B45))
+    }
+}
+
+@Composable
+fun AqiCompactCard(aqi: AqiUiState.Success) {
+    val aqiColor = when {
+        aqi.aqi <= 50 -> Color(0xFF2E7D32)
+        aqi.aqi <= 100 -> Color(0xFFF57C00)
+        aqi.aqi <= 150 -> Color(0xFFE65100)
+        aqi.aqi <= 200 -> Color(0xFFD32F2F)
+        else -> Color(0xFF7B1FA2)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -334,6 +517,67 @@ fun AlertCard(alert: CityAlert) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
+                        color = aqiColor.copy(alpha = 0.15f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("${aqi.aqi}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = aqiColor)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(aqi.category, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = aqiColor)
+                        Text("Dominant Pollutant: ${aqi.dominantPollutant ?: "PM2.5"}", fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = Color(0xFFE0E0E0))
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Source: ${aqi.sourceLabel ?: "Open-Meteo • CAMS"}", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+                Text(aqi.lastUpdatedText, fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+fun AlertCard(alert: CityAlert) {
+    val severityColor = when (alert.severity) {
+        "CRITICAL", "SEVERE" -> Color(0xFFD32F2F)
+        "HIGH" -> Color(0xFFE65100)
+        "MODERATE" -> Color(0xFFF57C00)
+        else -> Color(0xFF1976D2)
+    }
+
+    val categoryIcon = when (alert.category) {
+        "WEATHER" -> Icons.Default.WbSunny
+        "DISASTER" -> Icons.Default.Warning
+        "AIR_QUALITY" -> Icons.Default.Air
+        else -> Icons.Default.Notifications
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Surface(
                         color = severityColor.copy(alpha = 0.15f),
                         shape = CircleShape,
                         modifier = Modifier.size(36.dp)
@@ -343,11 +587,12 @@ fun AlertCard(alert: CityAlert) {
                         }
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(alert.category.replace('_', ' '), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = severityColor)
-                        Text(alert.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(alert.category.replace('_', ' '), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = severityColor)
+                        Text(alert.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF0D2B45), maxLines = 2)
                     }
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Surface(
                     color = severityColor,
                     shape = RoundedCornerShape(6.dp)
@@ -363,9 +608,9 @@ fun AlertCard(alert: CityAlert) {
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            Text(alert.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 18.sp)
+            Text(alert.description, fontSize = 13.sp, color = Color(0xFF424242), lineHeight = 18.sp)
             Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(color = Color(0xFFE0E0E0))
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

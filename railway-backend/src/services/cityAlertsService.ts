@@ -1,228 +1,19 @@
 import { CityAlert, AlertCategory, AlertSeverity, AlertStatus, CityAlertsResponse } from '../models/cityAlertModels';
 import { railwayProviderService } from './railwayProviderService';
 
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
 export class CityAlertsService {
-  private async fetchGdacsAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], rawCount: number, withCoords: number, withinRadius: number }> {
-    try {
-      const res = await fetch('https://www.gdacs.org/xml/rss.xml', { signal: AbortSignal.timeout(6000) });
-      if (!res.ok) {
-        console.warn('[GDACS]: Status not OK:', res.status);
-        return { alerts: [], rawCount: 0, withCoords: 0, withinRadius: 0 };
-      }
-      const xmlText = await res.text();
+  private weatherCache = new Map<string, CacheEntry<CityAlert[]>>();
+  private gdacsCache: CacheEntry<CityAlert[]> | null = null;
+  private weatherInFlight = new Map<string, Promise<CityAlert[]>>();
+  private gdacsInFlight: Promise<CityAlert[]> | null = null;
 
-      const alerts: CityAlert[] = [];
-      const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-      let match;
-      let rawCount = 0;
-      let withCoords = 0;
-      let withinRadius = 0;
-
-      while ((match = itemRegex.exec(xmlText)) !== null) {
-        rawCount++;
-        const itemContent = match[1];
-        const getTag = (tag: string) => {
-          const tMatch = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i').exec(itemContent);
-          return tMatch ? tMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
-        };
-
-        const title = getTag('title');
-        const description = getTag('description');
-        const link = getTag('link');
-        const pubDate = getTag('pubDate');
-
-        let geomLat = 0;
-        let geomLon = 0;
-
-        const pointStr = getTag('georss:point');
-        if (pointStr) {
-          const parts = pointStr.trim().split(/\s+/);
-          if (parts.length >= 2) {
-            geomLat = parseFloat(parts[0]);
-            geomLon = parseFloat(parts[1]);
-          }
-        }
-
-        if (!geomLat || !geomLon) {
-          const latTag = getTag('geo:lat') || getTag('latitude') || getTag('gdacs:latitude');
-          const lonTag = getTag('geo:long') || getTag('geo:lon') || getTag('longitude') || getTag('gdacs:longitude');
-          if (latTag && lonTag) {
-            geomLat = parseFloat(latTag);
-            geomLon = parseFloat(lonTag);
-          }
-        }
-
-        const hasCoords = !isNaN(geomLat) && !isNaN(geomLon) && (geomLat !== 0 || geomLon !== 0);
-        if (hasCoords) {
-          withCoords++;
-        }
-
-        const dist = hasCoords ? this.haversineKm(lat, lon, geomLat, geomLon) : 99999;
-        const DEFAULT_DISASTER_RADIUS_KM = 400;
-        const lowerTitle = title.toLowerCase();
-        const isMajorStorm = lowerTitle.includes('cyclone') || lowerTitle.includes('storm') || lowerTitle.includes('typhoon') || lowerTitle.includes('hurricane');
-        const maxRadius = isMajorStorm ? 600 : DEFAULT_DISASTER_RADIUS_KM;
-
-        const included = hasCoords && (dist <= maxRadius);
-        if (included) {
-          withinRadius++;
-        }
-
-        console.log(`[GDACS Event Detail]: event="${title.substring(0, 35)}...", eventLat=${geomLat}, eventLon=${geomLon}, targetLat=${lat}, targetLon=${lon}, distance=${Math.round(dist)}km, maxRadius=${maxRadius}km, included=${included}`);
-
-        if (included) {
-          let severity: AlertSeverity = 'MODERATE';
-          if (lowerTitle.includes('red') || lowerTitle.includes('severe') || lowerTitle.includes('magnitude 6')) {
-            severity = 'CRITICAL';
-          } else if (lowerTitle.includes('orange') || lowerTitle.includes('moderate')) {
-            severity = 'HIGH';
-          }
-
-          alerts.push({
-            id: `gdacs_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-            title: title || 'Disaster Alert',
-            description: description || 'GDACS disaster event reported within regional relevance radius.',
-            category: 'DISASTER',
-            severity,
-            latitude: geomLat,
-            longitude: geomLon,
-            issuedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-            sourceName: 'GDACS',
-            sourceUrl: link || 'https://www.gdacs.org',
-            status: 'ACTIVE',
-            isVerified: true
-          });
-        }
-      }
-
-      console.log(`[GDACS]: status=OK, rawCount=${rawCount}, withCoords=${withCoords}, withinRadius=${withinRadius}, finalAlertCount=${alerts.length}`);
-      return { alerts, rawCount, withCoords, withinRadius };
-    } catch (e: any) {
-      console.warn('[GDACS Error]:', e.message);
-      return { alerts: [], rawCount: 0, withCoords: 0, withinRadius: 0 };
-    }
-  }
-
-  private async fetchOpenMeteoAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], requestSuccessful: boolean, weatherDataReceived: boolean }> {
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) {
-        console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=false, status=${res.status}`);
-        return { alerts: [], requestSuccessful: false, weatherDataReceived: false };
-      }
-      const json: any = await res.json();
-      const current = json.current;
-      if (!current) {
-        console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=true, weatherDataReceived=false`);
-        return { alerts: [], requestSuccessful: true, weatherDataReceived: false };
-      }
-
-      const alerts: CityAlert[] = [];
-      const temp = current.temperature_2m;
-      const precip = current.precipitation;
-      const wind = current.wind_speed_10m;
-
-      if (precip != null && precip > 15.0) {
-        alerts.push({
-          id: `om_precip_${Date.now()}`,
-          title: 'Heavy Precipitation Alert',
-          description: `Heavy rainfall/precipitation detected (${precip} mm). Exercise caution while traveling.`,
-          category: 'WEATHER',
-          severity: precip > 35 ? 'HIGH' : 'MODERATE',
-          latitude: lat,
-          longitude: lon,
-          issuedAt: new Date().toISOString(),
-          sourceName: 'Open-Meteo',
-          sourceUrl: 'https://open-meteo.com',
-          status: 'ACTIVE',
-          isVerified: true
-        });
-      }
-
-      if (wind != null && wind > 45.0) {
-        alerts.push({
-          id: `om_wind_${Date.now()}`,
-          title: 'Strong Wind Advisory',
-          description: `High wind speeds detected (${wind} km/h). Secure loose outdoor objects.`,
-          category: 'WEATHER',
-          severity: wind > 65 ? 'HIGH' : 'MODERATE',
-          latitude: lat,
-          longitude: lon,
-          issuedAt: new Date().toISOString(),
-          sourceName: 'Open-Meteo',
-          sourceUrl: 'https://open-meteo.com',
-          status: 'ACTIVE',
-          isVerified: true
-        });
-      }
-
-      if (temp != null && (temp > 42.0 || temp < 2.0)) {
-        alerts.push({
-          id: `om_temp_${Date.now()}`,
-          title: temp > 42 ? 'Extreme Heat Advisory' : 'Extreme Cold Advisory',
-          description: `Temperature has reached an extreme level (${temp}°C). Take necessary health precautions.`,
-          category: 'WEATHER',
-          severity: 'HIGH',
-          latitude: lat,
-          longitude: lon,
-          issuedAt: new Date().toISOString(),
-          sourceName: 'Open-Meteo',
-          sourceUrl: 'https://open-meteo.com',
-          status: 'ACTIVE',
-          isVerified: true
-        });
-      }
-
-      console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=true, weatherDataReceived=true, weatherAlertCount=${alerts.length}`);
-      return { alerts, requestSuccessful: true, weatherDataReceived: true };
-    } catch (e: any) {
-      console.warn('[Open-Meteo Error]:', e.message);
-      console.log(`[OPEN_METEO]: lat=${lat}, lon=${lon}, requestSuccessful=false, weatherDataReceived=false`);
-      return { alerts: [], requestSuccessful: false, weatherDataReceived: false };
-    }
-  }
-
-  private async fetchAqiAlerts(lat: number, lon: number): Promise<{ alerts: CityAlert[], providerStatus: string, aqi: number | null }> {
-    try {
-      const aqiRes: any = await railwayProviderService.getAqi(lat.toString(), lon.toString());
-      const providerStatus = aqiRes?.status || 'UNKNOWN';
-      const aqi = typeof aqiRes?.aqi === 'number' ? aqiRes.aqi : null;
-
-      console.log(`[AQICN]: lat=${lat}, lon=${lon}, providerStatus=${providerStatus}, aqi=${aqi}`);
-
-      if (aqiRes && aqiRes.status === 'OK' && typeof aqiRes.aqi === 'number') {
-        const val = aqiRes.aqi;
-        if (val > 100) {
-          let severity: AlertSeverity = 'MODERATE';
-          if (val > 300) severity = 'CRITICAL';
-          else if (val > 200) severity = 'HIGH';
-          else if (val > 150) severity = 'MODERATE';
-
-          const alertItem: CityAlert = {
-            id: `aqi_alert_${Date.now()}`,
-            title: `Air Quality Alert: ${aqiRes.category || 'Unhealthy'}`,
-            description: `Air Quality Index is ${val} (${aqiRes.category}). Dominant pollutant: ${aqiRes.dominantPollutant || 'PM2.5'}. ${val > 200 ? 'Sensitive groups and general public should avoid outdoor exposure.' : 'Sensitive individuals should limit prolonged outdoor exertion.'}`,
-            category: 'AIR_QUALITY',
-            severity,
-            city: aqiRes.stationName || undefined,
-            latitude: lat,
-            longitude: lon,
-            issuedAt: aqiRes.timeString ? new Date(aqiRes.timeString).toISOString() : new Date().toISOString(),
-            sourceName: 'AQICN',
-            sourceUrl: 'https://aqicn.org',
-            status: 'ACTIVE',
-            isVerified: true
-          };
-          return { alerts: [alertItem], providerStatus, aqi: val };
-        }
-      }
-      return { alerts: [], providerStatus, aqi };
-    } catch (e: any) {
-      console.warn('[AQICN Error]:', e.message);
-      return { alerts: [], providerStatus: 'ERROR', aqi: null };
-    }
-  }
+  private readonly WEATHER_TTL = 15 * 60 * 1000; // 15 minutes
+  private readonly GDACS_TTL = 10 * 60 * 1000;  // 10 minutes
 
   private haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371;
@@ -236,6 +27,381 @@ export class CityAlertsService {
     return R * c;
   }
 
+  private async fetchGdacsAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+    const now = Date.now();
+    if (this.gdacsCache && (now - this.gdacsCache.timestamp < this.GDACS_TTL)) {
+      return this.filterGdacsByLocation(this.gdacsCache.data, lat, lon);
+    }
+
+    if (this.gdacsInFlight) {
+      const alerts = await this.gdacsInFlight;
+      return this.filterGdacsByLocation(alerts, lat, lon);
+    }
+
+    this.gdacsInFlight = (async () => {
+      try {
+        const res = await fetch('https://www.gdacs.org/xml/rss.xml', {
+          headers: { 'User-Agent': 'SmartCityAssistant/1.0 contact@smartcity.com' },
+          signal: AbortSignal.timeout(8000)
+        });
+        if (!res.ok) {
+          console.warn('[GDACS]: Status not OK:', res.status);
+          return [];
+        }
+        const xmlText = await res.text();
+        const alerts: CityAlert[] = [];
+        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+        let match;
+        const currentTime = new Date();
+
+        while ((match = itemRegex.exec(xmlText)) !== null) {
+          const itemContent = match[1];
+          const getTag = (tag: string) => {
+            const tMatch = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, 'i').exec(itemContent);
+            return tMatch ? tMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim() : '';
+          };
+
+          const title = getTag('title');
+          const description = getTag('description');
+          const link = getTag('link');
+          const pubDateStr = getTag('pubDate');
+          const fromDateStr = getTag('gdacs:from') || getTag('from') || pubDateStr;
+          const toDateStr = getTag('gdacs:to') || getTag('to') || '';
+
+          let geomLat = 0;
+          let geomLon = 0;
+
+          const pointStr = getTag('georss:point');
+          if (pointStr) {
+            const parts = pointStr.trim().split(/\s+/);
+            if (parts.length >= 2) {
+              geomLat = parseFloat(parts[0]);
+              geomLon = parseFloat(parts[1]);
+            }
+          }
+
+          if (!geomLat || !geomLon) {
+            const latTag = getTag('geo:lat') || getTag('latitude') || getTag('gdacs:latitude');
+            const lonTag = getTag('geo:long') || getTag('geo:lon') || getTag('longitude') || getTag('gdacs:longitude');
+            if (latTag && lonTag) {
+              geomLat = parseFloat(latTag);
+              geomLon = parseFloat(lonTag);
+            }
+          }
+
+          const startTime = fromDateStr ? new Date(fromDateStr) : new Date();
+          const endTime = toDateStr ? new Date(toDateStr) : new Date(startTime.getTime() + 7 * 24 * 60 * 1000); // default 7 days validity if not specified
+
+          let status: AlertStatus = 'ACTIVE';
+          if (endTime < currentTime) {
+            status = 'EXPIRED';
+          } else if (startTime > currentTime) {
+            status = 'UPCOMING';
+          } else {
+            status = 'ACTIVE';
+          }
+
+          let severity: AlertSeverity = 'MODERATE';
+          const lowerTitle = title.toLowerCase();
+          if (lowerTitle.includes('red') || lowerTitle.includes('severe') || lowerTitle.includes('magnitude 6') || lowerTitle.includes('catastrophe')) {
+            severity = 'CRITICAL';
+          } else if (lowerTitle.includes('orange') || lowerTitle.includes('high') || lowerTitle.includes('moderate')) {
+            severity = 'HIGH';
+          } else {
+            severity = 'MODERATE';
+          }
+
+          alerts.push({
+            id: `gdacs_${Math.random().toString(36).substring(2, 9)}`,
+            type: 'DISASTER',
+            title: title || 'Disaster Alert',
+            description: description || 'GDACS disaster event reported.',
+            category: 'DISASTER',
+            severity,
+            status,
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+            lastUpdated: new Date().toISOString(),
+            latitude: !isNaN(geomLat) ? geomLat : undefined,
+            longitude: !isNaN(geomLon) ? geomLon : undefined,
+            sourceName: 'GDACS',
+            sourceUrl: link || 'https://www.gdacs.org',
+            isVerified: true
+          });
+        }
+
+        this.gdacsCache = { data: alerts, timestamp: Date.now() };
+        return alerts;
+      } catch (e: any) {
+        console.warn('[GDACS Error]:', e.message);
+        return [];
+      } finally {
+        this.gdacsInFlight = null;
+      }
+    })();
+
+    const allAlerts = await this.gdacsInFlight;
+    return this.filterGdacsByLocation(allAlerts, lat, lon);
+  }
+
+  private filterGdacsByLocation(allAlerts: CityAlert[], lat: number, lon: number): CityAlert[] {
+    const DEFAULT_RADIUS_KM = 300;
+    const filtered: CityAlert[] = [];
+
+    for (const alert of allAlerts) {
+      if (alert.latitude != null && alert.longitude != null && alert.latitude !== 0 && alert.longitude !== 0) {
+        const dist = this.haversineKm(lat, lon, alert.latitude, alert.longitude);
+        const isMajor = alert.title.toLowerCase().includes('cyclone') || alert.title.toLowerCase().includes('earthquake') || alert.title.toLowerCase().includes('storm');
+        const maxRadius = isMajor ? 600 : DEFAULT_RADIUS_KM;
+
+        if (dist <= maxRadius) {
+          filtered.push({
+            ...alert,
+            locationName: `Local Event (~${Math.round(dist)} km away)`
+          });
+        } else if (dist <= 1500) {
+          filtered.push({
+            ...alert,
+            title: `[Regional] ${alert.title}`,
+            locationName: `Regional Event (~${Math.round(dist)} km away)`
+          });
+        }
+      }
+    }
+    return filtered;
+  }
+
+  private async fetchMetNorwayWeatherAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+    const normLat = Number(lat.toFixed(4));
+    const normLon = Number(lon.toFixed(4));
+    const cacheKey = `${normLat},${normLon}`;
+    const now = Date.now();
+
+    if (this.weatherCache.has(cacheKey)) {
+      const entry = this.weatherCache.get(cacheKey)!;
+      if (now - entry.timestamp < this.WEATHER_TTL) {
+        return entry.data;
+      }
+    }
+
+    if (this.weatherInFlight.has(cacheKey)) {
+      return this.weatherInFlight.get(cacheKey)!;
+    }
+
+    const promise = (async () => {
+      try {
+        const url = `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${normLat}&lon=${normLon}`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'SmartCityAssistant/1.0 contact@smartcity.com' },
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (res.status === 429) {
+          console.warn('[MET Norway]: Rate limited (429)');
+          return [];
+        }
+        if (!res.ok) {
+          console.warn('[MET Norway]: Status not OK:', res.status);
+          return [];
+        }
+
+        const json: any = await res.json();
+        const timeseries = json?.properties?.timeseries;
+        if (!Array.isArray(timeseries) || timeseries.length === 0) {
+          return [];
+        }
+
+        const alerts: CityAlert[] = [];
+        const currentTime = new Date();
+
+        // Check first few timeseries records for weather conditions
+        for (let i = 0; i < Math.min(timeseries.length, 12); i++) {
+          const entry = timeseries[i];
+          const timeStr = entry.time;
+          const details = entry?.data?.instant?.details;
+          const next1h = entry?.data?.next_1_hours;
+          const next6h = entry?.data?.next_6_hours;
+
+          if (!details) continue;
+
+          const temp = details.air_temperature; // Celsius
+          const windSpeedMs = details.wind_speed; // m/s
+          const windSpeedKmh = windSpeedMs != null ? windSpeedMs * 3.6 : 0;
+          const precipAmount = next1h?.details?.precipitation_amount ?? next6h?.details?.precipitation_amount ?? 0;
+          const precipProb = next1h?.details?.probability_of_precipitation ?? next6h?.details?.probability_of_precipitation ?? 0;
+          const symbolCode = next1h?.summary?.symbol_code ?? next6h?.summary?.symbol_code ?? '';
+
+          const validTime = timeStr ? new Date(timeStr) : currentTime;
+          if (validTime < currentTime && (currentTime.getTime() - validTime.getTime() > 3 * 3600 * 1000)) {
+            continue; // skip old timestamps
+          }
+
+          // Threshold checks
+          // 1. Heavy Rain
+          if (precipProb >= 70 || precipAmount >= 15) {
+            alerts.push({
+              id: `met_rain_${i}_${Date.now()}`,
+              type: 'WEATHER',
+              title: 'Weather Advisory: Heavy Rain',
+              description: `Heavy rainfall forecast with probability ${precipProb}% and amount ${precipAmount} mm. Exercise caution during travel.`,
+              category: 'WEATHER',
+              severity: precipAmount >= 30 ? 'HIGH' : 'MODERATE',
+              status: 'ACTIVE',
+              startTime: timeStr,
+              endTime: new Date(validTime.getTime() + 3 * 3600 * 1000).toISOString(),
+              lastUpdated: new Date().toISOString(),
+              latitude: normLat,
+              longitude: normLon,
+              sourceName: 'MET Norway',
+              sourceUrl: 'https://www.met.no',
+              isVerified: true
+            });
+            break; // add once per check
+          }
+
+          // 2. Thunderstorm
+          if (symbolCode.includes('thunder')) {
+            alerts.push({
+              id: `met_thunder_${i}_${Date.now()}`,
+              type: 'WEATHER',
+              title: 'Weather Advisory: Thunderstorm',
+              description: `Thunderstorm conditions detected in weather forecast (${symbolCode}). Stay indoors and avoid open areas.`,
+              category: 'WEATHER',
+              severity: 'HIGH',
+              status: 'ACTIVE',
+              startTime: timeStr,
+              endTime: new Date(validTime.getTime() + 3 * 3600 * 1000).toISOString(),
+              lastUpdated: new Date().toISOString(),
+              latitude: normLat,
+              longitude: normLon,
+              sourceName: 'MET Norway',
+              sourceUrl: 'https://www.met.no',
+              isVerified: true
+            });
+            break;
+          }
+
+          // 3. Strong Wind (>= 40 km/h i.e. 11.1 m/s)
+          if (windSpeedKmh >= 40) {
+            alerts.push({
+              id: `met_wind_${i}_${Date.now()}`,
+              type: 'WEATHER',
+              title: 'Weather Advisory: Strong Wind',
+              description: `Strong winds forecast at ${Math.round(windSpeedKmh)} km/h. Secure loose outdoor objects.`,
+              category: 'WEATHER',
+              severity: windSpeedKmh >= 60 ? 'HIGH' : 'MODERATE',
+              status: 'ACTIVE',
+              startTime: timeStr,
+              endTime: new Date(validTime.getTime() + 3 * 3600 * 1000).toISOString(),
+              lastUpdated: new Date().toISOString(),
+              latitude: normLat,
+              longitude: normLon,
+              sourceName: 'MET Norway',
+              sourceUrl: 'https://www.met.no',
+              isVerified: true
+            });
+            break;
+          }
+
+          // 4. Extreme Heat (>= 40°C)
+          if (temp != null && temp >= 40) {
+            alerts.push({
+              id: `met_heat_${i}_${Date.now()}`,
+              type: 'WEATHER',
+              title: 'Weather Advisory: Extreme Heat',
+              description: `High temperature forecast at ${temp}°C. Stay hydrated and avoid prolonged sun exposure.`,
+              category: 'WEATHER',
+              severity: 'HIGH',
+              status: 'ACTIVE',
+              startTime: timeStr,
+              endTime: new Date(validTime.getTime() + 6 * 3600 * 1000).toISOString(),
+              lastUpdated: new Date().toISOString(),
+              latitude: normLat,
+              longitude: normLon,
+              sourceName: 'MET Norway',
+              sourceUrl: 'https://www.met.no',
+              isVerified: true
+            });
+            break;
+          }
+
+          // 5. Extreme Cold (<= 5°C)
+          if (temp != null && temp <= 5) {
+            alerts.push({
+              id: `met_cold_${i}_${Date.now()}`,
+              type: 'WEATHER',
+              title: 'Weather Advisory: Extreme Cold',
+              description: `Low temperature forecast at ${temp}°C. Take appropriate warm clothing precautions.`,
+              category: 'WEATHER',
+              severity: 'MODERATE',
+              status: 'ACTIVE',
+              startTime: timeStr,
+              endTime: new Date(validTime.getTime() + 6 * 3600 * 1000).toISOString(),
+              lastUpdated: new Date().toISOString(),
+              latitude: normLat,
+              longitude: normLon,
+              sourceName: 'MET Norway',
+              sourceUrl: 'https://www.met.no',
+              isVerified: true
+            });
+            break;
+          }
+        }
+
+        this.weatherCache.set(cacheKey, { data: alerts, timestamp: Date.now() });
+        return alerts;
+      } catch (e: any) {
+        console.warn('[MET Norway Error]:', e.message);
+        return [];
+      } finally {
+        this.weatherInFlight.delete(cacheKey);
+      }
+    })();
+
+    this.weatherInFlight.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async fetchAqiAlerts(lat: number, lon: number): Promise<CityAlert[]> {
+    try {
+      const aqiRes: any = await railwayProviderService.getAqi(lat.toString(), lon.toString());
+      if (aqiRes && aqiRes.status === 'OK' && typeof aqiRes.aqi === 'number') {
+        const aqiVal = aqiRes.aqi;
+        const categoryName = aqiRes.category || (aqiVal <= 50 ? 'Good' : aqiVal <= 100 ? 'Moderate' : aqiVal <= 150 ? 'Unhealthy for Sensitive Groups' : aqiVal <= 200 ? 'Unhealthy' : 'Very Unhealthy');
+
+        if (aqiVal > 50) {
+          let severity: AlertSeverity = 'MODERATE';
+          if (aqiVal > 300) severity = 'CRITICAL';
+          else if (aqiVal > 200) severity = 'HIGH';
+          else if (aqiVal > 150) severity = 'MODERATE';
+          else severity = 'LOW';
+
+          return [{
+            id: `aqi_alert_${Date.now()}`,
+            type: 'AIR_QUALITY',
+            title: `Air Quality Advisory: ${categoryName}`,
+            description: `Air Quality Index is ${aqiVal} (${categoryName}). ${aqiVal > 150 ? 'Sensitive individuals and general public should reduce prolonged outdoor exposure.' : 'Unusually sensitive people may want to reduce outdoor exertion.'}`,
+            category: 'AIR_QUALITY',
+            severity,
+            status: 'ACTIVE',
+            startTime: new Date().toISOString(),
+            lastUpdated: aqiRes.timeString ? new Date(aqiRes.timeString).toISOString() : new Date().toISOString(),
+            locationName: aqiRes.stationName || 'Local Air Quality Station',
+            latitude: lat,
+            longitude: lon,
+            sourceName: aqiRes.source || 'CPCB / Open-Meteo • CAMS',
+            sourceUrl: 'https://aqicn.org',
+            isVerified: true
+          }];
+        }
+      }
+      return [];
+    } catch (e: any) {
+      console.warn('[AQI Alert Error]:', e.message);
+      return [];
+    }
+  }
+
   async getAlerts(
     lat?: number,
     lon?: number,
@@ -243,35 +409,60 @@ export class CityAlertsService {
     district?: string,
     category?: string
   ): Promise<CityAlertsResponse> {
-    const targetLat = lat ?? 25.6022;
-    const targetLon = lon ?? 85.1376;
+    const targetLat = lat ?? 23.58; // Default to a valid neutral location if none provided
+    const targetLon = lon ?? 72.36;
 
-    console.log(`[CityAlerts TEST]: location=${city || 'Madhuban / Patna'}, lat=${targetLat}, lon=${targetLon}, category=${category || 'ALL'}`);
+    console.log(`[CityAlerts Service]: location=${city || 'Custom Location'}, lat=${targetLat}, lon=${targetLon}, category=${category || 'ALL'}`);
 
-    const [gdacsResult, meteoResult, aqiResult] = await Promise.all([
+    const [gdacsAlerts, metAlerts, aqiAlerts] = await Promise.all([
       this.fetchGdacsAlerts(targetLat, targetLon),
-      this.fetchOpenMeteoAlerts(targetLat, targetLon),
+      this.fetchMetNorwayWeatherAlerts(targetLat, targetLon),
       this.fetchAqiAlerts(targetLat, targetLon)
     ]);
 
-    let allAlerts = [...gdacsResult.alerts, ...meteoResult.alerts, ...aqiResult.alerts];
+    let allAlerts = [...gdacsAlerts, ...metAlerts, ...aqiAlerts];
 
-    console.log(`[CityAlerts Summary]: totalAlerts=${allAlerts.length} (GDACS: ${gdacsResult.alerts.length}, Open-Meteo: ${meteoResult.alerts.length}, AQICN: ${aqiResult.alerts.length})`);
+    // Filter out expired alerts by default
+    allAlerts = allAlerts.filter(a => a.status !== 'EXPIRED');
 
     if (category) {
       const upperCat = category.toUpperCase();
       allAlerts = allAlerts.filter(a => a.category.toUpperCase() === upperCat);
     }
 
+    // Sorting rules: ACTIVE first, then severity (CRITICAL > HIGH > MODERATE > LOW > INFO), then newest update
+    const severityRank: Record<AlertSeverity, number> = {
+      CRITICAL: 5,
+      SEVERE: 5,
+      HIGH: 4,
+      MODERATE: 3,
+      LOW: 2,
+      INFO: 1
+    };
+
+    allAlerts.sort((a, b) => {
+      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1;
+      if (b.status === 'ACTIVE' && a.status !== 'ACTIVE') return 1;
+
+      const rankA = severityRank[a.severity] || 0;
+      const rankB = severityRank[b.severity] || 0;
+      if (rankA !== rankB) return rankB - rankA;
+
+      const timeA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+      const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+      return timeB - timeA;
+    });
+
     return {
       status: 'OK',
       location: {
-        city: city || 'Madhuban / Patna',
-        district: district || 'Bihar',
         latitude: targetLat,
-        longitude: targetLon
+        longitude: targetLon,
+        city: city || undefined,
+        district: district || undefined
       },
-      alerts: allAlerts
+      alerts: allAlerts,
+      updatedAt: new Date().toISOString()
     };
   }
 }

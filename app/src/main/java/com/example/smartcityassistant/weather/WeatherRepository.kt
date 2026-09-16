@@ -65,7 +65,7 @@ class WeatherRepository(context: Context) {
 
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
-            Log.d(TAG, "Loaded cached weather for $normKey with ${resp.forecast.size} forecast days")
+            Log.d(TAG, "[ANDROID WEATHER CACHE] CACHE HIT sunrise=${resp.sunrise} sunset=${resp.sunset}")
 
             WeatherUiState.Success(
                 temperature = resp.temperature,
@@ -98,7 +98,7 @@ class WeatherRepository(context: Context) {
                     putString(jsonKey, gson.toJson(cached))
                     putLong(timeKey, System.currentTimeMillis())
                 }
-                Log.d(TAG, "Saved weather cache for ${getNormKey(lat, lon)}")
+                Log.d(TAG, "[ANDROID WEATHER CACHE SAVE] sunrise=${response.sunrise} sunset=${response.sunset}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving weather cache", e)
@@ -120,7 +120,7 @@ class WeatherRepository(context: Context) {
             val newDeferred = CoroutineScope(Dispatchers.IO).async {
                 try {
                     val response = SecureBackendClient.service.getWeather(lat, lon)
-                    Log.d(TAG, "[WEATHER UPSTREAM] status=${response.status} forecastCount=${response.forecast?.size ?: 0}")
+                    Log.d(TAG, "[ANDROID WEATHER NETWORK] NETWORK RESPONSE sunrise=${response.sunrise} sunset=${response.sunset}")
                     if (response.status == "OK" && response.temperature != null) {
                         saveCache(response, lat, lon)
                         WeatherUiState.Success(

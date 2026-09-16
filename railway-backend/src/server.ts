@@ -12,6 +12,7 @@ import aiRoutes from './routes/aiRoutes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // Security & Middleware
@@ -34,6 +35,7 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/v1/railway', railwayRoutes);
+app.use('/api/v1/alerts', cityAlertsRoutes);
 app.use('/api/v1/city-alerts', cityAlertsRoutes);
 app.use('/api/v1/government', governmentRoutes);
 app.use('/api/v1/ai', aiRoutes);

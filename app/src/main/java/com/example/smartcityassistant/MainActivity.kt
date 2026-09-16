@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
@@ -38,6 +39,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -47,9 +49,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +67,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.font.FontWeight
@@ -597,69 +603,66 @@ fun WeatherSummaryCard(
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("WEATHER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text("WEATHER", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("View Forecast", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SecondaryBlue, modifier = Modifier.size(16.dp))
+                    Text("Forecast →", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             when (weatherState) {
                 is WeatherUiState.Loading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Connecting to weather service...", fontSize = 13.sp, color = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading...", fontSize = 12.sp, color = Color.Gray)
                     }
                 }
                 is WeatherUiState.Error -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onRetry() }.padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onRetry() }.padding(vertical = 2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Weather unavailable (Tap to retry)", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
-                        Icon(Icons.Default.Refresh, contentDescription = "Retry", tint = PrimaryNavy, modifier = Modifier.size(18.dp))
+                        Text("Unavailable (Tap)", fontSize = 12.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                        Icon(Icons.Default.Refresh, contentDescription = "Retry", tint = PrimaryNavy, modifier = Modifier.size(16.dp))
                     }
                 }
                 is WeatherUiState.Success -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             WeatherIcon(weatherCode = weatherState.weatherCode)
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    text = "${weatherState.temperature.toInt()}°C",
-                                    fontSize = 26.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryNavy
-                                )
-                                Text(
-                                    text = getWeatherConditionText(weatherState.weatherCode),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = MainText
-                                )
-                                Text(
-                                    text = "Feels like ${weatherState.apparentTemperature.toInt()}°C",
-                                    fontSize = 11.sp,
-                                    color = SecondaryText
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${weatherState.temperature.toInt()}°C",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryNavy
+                            )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = getWeatherConditionText(weatherState.weatherCode),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MainText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Feels like ${weatherState.apparentTemperature.toInt()}°C",
+                            fontSize = 10.sp,
+                            color = SecondaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -680,71 +683,241 @@ fun AirQualitySummaryCard(
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("AIR QUALITY (AQI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Text("AIR QUALITY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("View Details", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SecondaryBlue, modifier = Modifier.size(16.dp))
+                    Text("Details →", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             when (aqiState) {
                 is AqiUiState.Loading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Loading AQI...", fontSize = 13.sp, color = Color.Gray)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading...", fontSize = 12.sp, color = Color.Gray)
                     }
                 }
                 is AqiUiState.Error -> {
-                    Text("AQI unavailable", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                    Text("Unavailable", fontSize = 12.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
                 }
                 is AqiUiState.NoNearby -> {
-                    Text("AQI unavailable nearby", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                    Text("No nearby", fontSize = 12.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
                 }
                 is AqiUiState.Success -> {
                     val style = AqiClassification.getStyle(aqiState.aqi)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = aqiState.aqi.toString(),
-                                fontSize = 28.sp,
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = style.textColor,
                                 modifier = Modifier
                                     .background(style.backgroundColor, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
                             )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    text = aqiState.category,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = MainText
-                                )
-                                Text(
-                                    text = aqiState.sourceLabel ?: if (aqiState.source == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station",
-                                    fontSize = 11.sp,
-                                    color = SecondaryText
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = aqiState.category,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MainText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = aqiState.sourceLabel ?: if (aqiState.source == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB",
+                            fontSize = 10.sp,
+                            color = SecondaryText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun UnselectedWeatherCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("WEATHER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Spacer(modifier = Modifier.height(14.dp))
+            Text("Search location to view weather", fontSize = 13.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.height(14.dp))
+        }
+    }
+}
+
+@Composable
+fun UnselectedAqiCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("AIR QUALITY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Spacer(modifier = Modifier.height(14.dp))
+            Text("Search location to view air quality", fontSize = 13.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+            Spacer(modifier = Modifier.height(14.dp))
+        }
+    }
+}
+
+@Composable
+fun EmergencySummaryCard(onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = Color(0xFFFFEBEE),
+                        shape = CircleShape,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Emergency, contentDescription = null, tint = Color(0xFFD32F2F), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "EMERGENCY",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFFD32F2F)
+                        )
+                        Text(
+                            text = "Quick access to emergency services",
+                            fontSize = 11.sp,
+                            color = SecondaryText
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Emergency",
+                        tint = Color(0xFFD32F2F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFFF0F0F0))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EmergencyServiceItem(
+                    title = "Police",
+                    icon = Icons.Default.LocalPolice,
+                    contentDescription = "Police emergency",
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f)
+                )
+                EmergencyServiceItem(
+                    title = "Ambulance",
+                    icon = Icons.Default.LocalHospital,
+                    contentDescription = "Ambulance emergency",
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f)
+                )
+                EmergencyServiceItem(
+                    title = "Fire",
+                    icon = Icons.Default.LocalFireDepartment,
+                    contentDescription = "Fire emergency",
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmergencyServiceItem(
+    title: String,
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        color = Color(0xFFFFEBEE).copy(alpha = 0.5f),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, Color(0xFFD32F2F).copy(alpha = 0.15f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Color(0xFFD32F2F),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = PrimaryNavy,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Call",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFD32F2F)
+            )
         }
     }
 }
@@ -792,6 +965,7 @@ fun WeatherDetailsScreen(
                     }
                 }
                 is WeatherUiState.Success -> {
+                    Log.d("AndroidWeatherUI", "[ANDROID WEATHER DATA] sunrise=${weatherState.sunrise} sunset=${weatherState.sunset} temperature=${weatherState.temperature} source=${weatherState.lastUpdatedText}")
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1425,20 +1599,30 @@ fun SmartCityHomeScreen(
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
 
-    var locationMode by rememberSaveable { mutableStateOf("CURRENT_LOCATION") }
-    var locationText by rememberSaveable { mutableStateOf("Detecting current location...") }
-    var currentLat by rememberSaveable { mutableStateOf<Double?>(null) }
-    var currentLon by rememberSaveable { mutableStateOf<Double?>(null) }
-    var searchedLat by rememberSaveable { mutableStateOf<Double?>(null) }
-    var searchedLon by rememberSaveable { mutableStateOf<Double?>(null) }
-    var isLocating by remember { mutableStateOf(false) }
-    var showSearchDialog by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val modules = remember {
+        listOf(
+            ModuleData("Report Problem", "Garbage • Road • Streetlight", Icons.Default.Report, "report", Color(0xFFE53935)),
+            ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport", Color(0xFF1E88E5)),
+            ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby", Color(0xFF00897B)),
+            ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
+            ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
+            ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
+            ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
+        )
+    }
+
+    var locationText by remember { mutableStateOf("Search location") }
+    var searchedLat by remember { mutableStateOf<Double?>(null) }
+    var searchedLon by remember { mutableStateOf<Double?>(null) }
+    var showSearchDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val aqiState by aqiViewModel.uiState.collectAsState()
     val weatherState by weatherViewModel.uiState.collectAsState()
+
+    var isLocating by remember { mutableStateOf(false) }
 
     var fetchCurrentLocation: () -> Unit = {}
 
@@ -1448,13 +1632,11 @@ fun SmartCityHomeScreen(
         if (perms.values.any { it }) {
             fetchCurrentLocation()
         } else {
-            locationText = "Location permission required"
-            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Location permission is required to use Current Location.", Toast.LENGTH_LONG).show()
         }
     }
 
     fetchCurrentLocation = {
-        locationMode = "CURRENT_LOCATION"
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
@@ -1464,8 +1646,8 @@ fun SmartCityHomeScreen(
                 .addOnSuccessListener { loc ->
                     isLocating = false
                     if (loc != null) {
-                        currentLat = loc.latitude
-                        currentLon = loc.longitude
+                        searchedLat = loc.latitude
+                        searchedLon = loc.longitude
                         scope.launch {
                             val address = TransportService.getAddressFromLocation(context, loc.latitude, loc.longitude)
                             locationText = if (address.isNotBlank() && address != "Unknown Location" && address != "Location detected") {
@@ -1477,27 +1659,27 @@ fun SmartCityHomeScreen(
                             weatherViewModel.loadWeather(loc.latitude, loc.longitude)
                         }
                     } else {
+                        isLocating = false
                         locationText = "Location unavailable"
                         Toast.makeText(context, "Location unavailable", Toast.LENGTH_SHORT).show()
                     }
                 }
                 .addOnFailureListener {
                     isLocating = false
-                    locationText = "Location unavailable"
+                    locationText = "Location error"
                     Toast.makeText(context, "Location error", Toast.LENGTH_SHORT).show()
                 }
         } else {
-            locationText = "Location permission required"
             locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (locationMode == "CURRENT_LOCATION") {
-            fetchCurrentLocation()
-        } else if (locationMode == "SEARCHED_LOCATION" && searchedLat != null && searchedLon != null) {
-            aqiViewModel.loadAqi(searchedLat!!, searchedLon!!)
-            weatherViewModel.loadWeather(searchedLat!!, searchedLon!!)
+    LaunchedEffect(searchedLat, searchedLon) {
+        searchedLat?.let { lat ->
+            searchedLon?.let { lon ->
+                aqiViewModel.loadAqi(lat, lon)
+                weatherViewModel.loadWeather(lat, lon)
+            }
         }
     }
 
@@ -1536,7 +1718,6 @@ fun SmartCityHomeScreen(
                                 val addresses = geocoder.getFromLocationName(searchQuery, 1)
                                 if (!addresses.isNullOrEmpty()) {
                                     val addr = addresses[0]
-                                    locationMode = "SEARCHED_LOCATION"
                                     searchedLat = addr.latitude
                                     searchedLon = addr.longitude
                                     locationText = addr.getAddressLine(0) ?: searchQuery
@@ -1577,158 +1758,227 @@ fun SmartCityHomeScreen(
                 .background(PrimaryNavy)
                 .padding(20.dp)
         ) {
-            Text("Smart City", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Smart City",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(
+                    modifier = Modifier.width(6.dp)
+                )
+
+                Image(
+                    painter = painterResource(R.drawable.smart_city_logo_v3),
+                    contentDescription = "Smart City Assistant",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
             Spacer(modifier = Modifier.height(2.dp))
             Text("Safer People • Cleaner City • Better Tomorrow", color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
             Spacer(modifier = Modifier.height(12.dp))
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showSearchDialog = true },
                 shape = RoundedCornerShape(8.dp),
                 color = Color.White.copy(alpha = 0.2f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f).clickable { showSearchDialog = true }
+                        modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(locationText, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { showSearchDialog = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Search, contentDescription = "Search Location", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
                         if (isLocating) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                         } else {
-                            TextButton(
-                                onClick = {
-                                    fetchCurrentLocation()
-                                },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            IconButton(
+                                onClick = { fetchCurrentLocation() },
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(Icons.Default.MyLocation, contentDescription = "Current Location", tint = Color.White, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text("GPS", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.MyLocation, contentDescription = "Current Location", tint = Color.White, modifier = Modifier.size(18.dp))
                             }
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(onClick = { showSearchDialog = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Search, contentDescription = "Search Location", tint = Color.White, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
         }
 
-        Column(modifier = Modifier.padding(20.dp).verticalScroll(scrollState)) {
-            Text("LOCAL CONDITIONS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            WeatherSummaryCard(weatherState = weatherState, onRetry = { weatherViewModel.retry() }) {
-                onNavigate("weather_details")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            AirQualitySummaryCard(aqiState = aqiState) {
-                onNavigate("aqi_details")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Emergency Card
-            Card(
-                onClick = { onNavigate("emergency") },
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                shape = RoundedCornerShape(12.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = ErrorRed.copy(alpha = 0.12f),
-                        shape = CircleShape,
-                        modifier = Modifier.size(44.dp)
+                item {
+                    Text("LOCAL CONDITIONS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Emergency, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(24.dp))
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (searchedLat == null) {
+                                UnselectedWeatherCard { showSearchDialog = true }
+                            } else {
+                                WeatherSummaryCard(weatherState = weatherState, onRetry = { weatherViewModel.retry() }) {
+                                    onNavigate("weather_details")
+                                }
+                            }
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (searchedLat == null) {
+                                UnselectedAqiCard { showSearchDialog = true }
+                            } else {
+                                AirQualitySummaryCard(aqiState = aqiState) {
+                                    onNavigate("aqi_details")
+                                }
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Emergency", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text("Police • Ambulance • Fire", fontSize = 12.sp, color = SecondaryText)
+                }
+
+                item {
+                    EmergencySummaryCard {
+                        onNavigate("emergency")
                     }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = ErrorRed)
                 }
-            }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text("City Services", fontWeight = FontWeight.Bold, color = MainText, fontSize = 16.sp)
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Grid of Modules
-            val modules = listOf(
-                ModuleData("Report Problem", "Garbage • Road • Streetlight", Icons.Default.Report, "report", Color(0xFFE53935)),
-                ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport", Color(0xFF1E88E5)),
-                ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby", Color(0xFF00897B)),
-                ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
-                ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
-                ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
-                ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
-            )
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.height(456.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                userScrollEnabled = false
-            ) {
-                items(modules) { module ->
-                    ModuleCard(module) { onNavigate(module.target) }
+                item {
+                    Text("City Services", fontWeight = FontWeight.Bold, color = MainText, fontSize = 16.sp)
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                val modules = listOf(
+                    ModuleData("Report Problem", "Garbage • Road • Streetlight", Icons.Default.Report, "report", Color(0xFFE53935)),
+                    ModuleData("Transport", "Bus • Rail • Route", Icons.Default.DirectionsBus, "transport", Color(0xFF1E88E5)),
+                    ModuleData("Nearby", "Hospital • Police • ATM", Icons.Default.Map, "nearby", Color(0xFF00897B)),
+                    ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
+                    ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
+                    ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
+                    ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
+                )
 
-            // Civic Message Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = Color(0xFFE8F5E9),
-                        shape = CircleShape,
-                        modifier = Modifier.size(36.dp)
+                val chunkedModules = modules.chunked(2)
+                items(chunkedModules) { rowModules ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                        for (module in rowModules) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                ModuleCard(module) { onNavigate(module.target) }
+                            }
+                        }
+                        if (rowModules.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Together for a Cleaner City", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = PrimaryNavy)
-                        Text("Report • Participate • Improve", fontSize = 11.sp, color = SecondaryText)
+                }
+
+                item {
+                    // Civic Message Card
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = Color(0xFFE8F5E9),
+                                shape = CircleShape,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Together for a Cleaner City", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = PrimaryNavy)
+                                Text("Report • Participate • Improve", fontSize = 11.sp, color = SecondaryText)
+                            }
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            // ChatGPT-style subtle vertical scrollbar on the right edge
+            val canScroll = listState.canScrollForward || listState.canScrollBackward
+            if (canScroll) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp, top = 16.dp, bottom = 16.dp)
+                        .fillMaxHeight()
+                        .width(4.dp)
+                ) {
+                    // Track
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
+                    )
+
+                    // Thumb
+                    val layoutInfo = listState.layoutInfo
+                    val totalItems = layoutInfo.totalItemsCount
+                    if (totalItems > 0) {
+                        val visibleItems = layoutInfo.visibleItemsInfo
+                        val firstItem = visibleItems.firstOrNull()
+                        if (firstItem != null) {
+                            val elementHeight = if (visibleItems.isNotEmpty()) layoutInfo.viewportSize.height.toFloat() / visibleItems.size.toFloat() else 1f
+                            val totalHeight = totalItems * elementHeight
+                            val viewportHeight = layoutInfo.viewportSize.height.toFloat()
+                            
+                            val thumbHeight = (viewportHeight * (viewportHeight / totalHeight)).coerceIn(24f, viewportHeight - 10f)
+                            val maxScrollOffset = (totalHeight - viewportHeight).coerceAtLeast(1f)
+                            
+                            val scrollOffset = (firstItem.index * elementHeight - firstItem.offset).coerceIn(0f, maxScrollOffset)
+                            val scrollProgress = (scrollOffset / maxScrollOffset).coerceIn(0f, 1f)
+                            
+                            val maxThumbTranslate = (viewportHeight - thumbHeight - 32f).coerceAtLeast(0f)
+                            val thumbTranslateY = maxThumbTranslate * scrollProgress
+
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .height(with(LocalDensity.current) { thumbHeight.toDp() })
+                                    .offset(y = with(LocalDensity.current) { thumbTranslateY.toDp() })
+                                    .background(PrimaryNavy.copy(alpha = 0.5f), RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1746,22 +1996,39 @@ fun ModuleCard(module: ModuleData, onClick: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(14.dp)
         ) {
-            Surface(
-                color = module.accentColor.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.size(36.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(end = 18.dp),
+                verticalArrangement = Arrangement.Center
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(module.icon, contentDescription = null, tint = module.accentColor, modifier = Modifier.size(20.dp))
+                Surface(
+                    color = module.accentColor.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(module.icon, contentDescription = null, tint = module.accentColor, modifier = Modifier.size(20.dp))
+                    }
                 }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(module.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText, maxLines = 1)
+                Text(module.subtitle, color = SecondaryText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(module.title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText, maxLines = 1)
-            Text(module.subtitle, color = SecondaryText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = module.accentColor,
+                modifier = Modifier
+                    .size(18.dp)
+                    .align(Alignment.BottomEnd)
+            )
         }
     }
 }

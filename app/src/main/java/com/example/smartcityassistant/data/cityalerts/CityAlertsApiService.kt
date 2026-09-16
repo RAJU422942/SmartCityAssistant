@@ -6,7 +6,7 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface CityAlertsApiService {
-    @GET("api/v1/city-alerts")
+    @GET("api/v1/alerts")
     suspend fun getAlerts(
         @Query("lat") lat: Double?,
         @Query("lon") lon: Double?,
