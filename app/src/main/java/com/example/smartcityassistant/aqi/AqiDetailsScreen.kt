@@ -109,17 +109,25 @@ fun AqiDetailsScreen(
                                         color = Color(0xFF1A1A1A)
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = buildString {
-                                            append("Nearest available monitoring station:\n")
-                                            append(state.stationName ?: "Monitoring Station")
-                                            state.distanceKm?.let { dist ->
-                                                append("\nDistance: ~$dist km from your location")
-                                            }
-                                        },
-                                        fontSize = 13.sp,
-                                        color = Color.Gray
-                                    )
+                                    if (state.source == "OPEN_METEO") {
+                                        Text(
+                                            text = "Model-based air quality\nLocation-based estimate",
+                                            fontSize = 13.sp,
+                                            color = Color.Gray
+                                        )
+                                    } else {
+                                        Text(
+                                            text = buildString {
+                                                append("Nearest available monitoring station:\n")
+                                                append(state.stationName ?: "Monitoring Station")
+                                                state.distanceKm?.let { dist ->
+                                                    append("\nDistance: ~$dist km from your location")
+                                                }
+                                            },
+                                            fontSize = 13.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
                                 }
                             }
 
