@@ -1427,9 +1427,12 @@ fun SmartCityHomeScreen(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
 
+    var locationMode by rememberSaveable { mutableStateOf("CURRENT_LOCATION") }
     var locationText by rememberSaveable { mutableStateOf("Detecting current location...") }
     var currentLat by rememberSaveable { mutableStateOf<Double?>(null) }
     var currentLon by rememberSaveable { mutableStateOf<Double?>(null) }
+    var searchedLat by rememberSaveable { mutableStateOf<Double?>(null) }
+    var searchedLon by rememberSaveable { mutableStateOf<Double?>(null) }
     var isLocating by remember { mutableStateOf(false) }
     var showSearchDialog by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -1451,6 +1454,7 @@ fun SmartCityHomeScreen(
     }
 
     fetchCurrentLocation = {
+        locationMode = "CURRENT_LOCATION"
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
@@ -1489,7 +1493,12 @@ fun SmartCityHomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        fetchCurrentLocation()
+        if (locationMode == "CURRENT_LOCATION") {
+            fetchCurrentLocation()
+        } else if (locationMode == "SEARCHED_LOCATION" && searchedLat != null && searchedLon != null) {
+            aqiViewModel.loadAqi(searchedLat!!, searchedLon!!)
+            weatherViewModel.loadWeather(searchedLat!!, searchedLon!!)
+        }
     }
 
     if (showSearchDialog) {
@@ -1527,8 +1536,9 @@ fun SmartCityHomeScreen(
                                 val addresses = geocoder.getFromLocationName(searchQuery, 1)
                                 if (!addresses.isNullOrEmpty()) {
                                     val addr = addresses[0]
-                                    currentLat = addr.latitude
-                                    currentLon = addr.longitude
+                                    locationMode = "SEARCHED_LOCATION"
+                                    searchedLat = addr.latitude
+                                    searchedLon = addr.longitude
                                     locationText = addr.getAddressLine(0) ?: searchQuery
                                     showSearchDialog = false
                                     searchQuery = ""
