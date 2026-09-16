@@ -355,7 +355,7 @@ export class RailwayProviderService {
         }
 
         const aqiVal = current.us_aqi || current.european_aqi || Math.round((current.pm2_5 || 25) * 1.5);
-        const category = aqiVal <= 50 ? 'Good' : aqiVal <= 100 ? 'Satisfactory' : aqiVal <= 200 ? 'Moderate' : aqiVal <= 300 ? 'Poor' : aqiVal <= 400 ? 'Very Poor' : 'Severe';
+        const category = aqiVal <= 50 ? 'Good' : aqiVal <= 100 ? 'Moderate' : aqiVal <= 150 ? 'Unhealthy for Sensitive Groups' : aqiVal <= 200 ? 'Unhealthy' : aqiVal <= 300 ? 'Very Unhealthy' : 'Hazardous';
 
         console.log(`[OPEN_METEO RESULT] aqi=${aqiVal} pm25=${current.pm2_5} pm10=${current.pm10}`);
         console.log(`[AQI FINAL] source=OPEN_METEO aqi=${aqiVal} category=${category}`);
