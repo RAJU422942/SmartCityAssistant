@@ -300,28 +300,28 @@ class MainActivity : ComponentActivity() {
                 val authState by authViewModel.uiState.collectAsState()
                 var authScreen by remember { mutableStateOf("login") }
 
-                when (authState) {
-                    is AuthUiState.Authenticated -> {
-                        MainNavigation(authViewModel = authViewModel)
-                    }
-                    else -> {
-                        when (authScreen) {
-                            "login" -> LoginScreen(
-                                viewModel = authViewModel,
-                                onLoginSuccess = {},
-                                onNavigateToSignUp = { authScreen = "signup" },
-                                onNavigateToForgotPassword = { authScreen = "forgot_password" }
-                            )
-                            "signup" -> SignUpScreen(
-                                viewModel = authViewModel,
-                                onSignUpSuccess = {},
-                                onBackToLogin = { authScreen = "login" }
-                            )
-                            "forgot_password" -> ForgotPasswordScreen(
-                                viewModel = authViewModel,
-                                onBackToLogin = { authScreen = "login" }
-                            )
-                        }
+                val hasToken = authViewModel.getStoredToken() != null
+                val isAuthenticated = hasToken || authState is AuthUiState.Authenticated
+
+                if (isAuthenticated) {
+                    MainNavigation(authViewModel = authViewModel)
+                } else {
+                    when (authScreen) {
+                        "login" -> LoginScreen(
+                            viewModel = authViewModel,
+                            onLoginSuccess = {},
+                            onNavigateToSignUp = { authScreen = "signup" },
+                            onNavigateToForgotPassword = { authScreen = "forgot_password" }
+                        )
+                        "signup" -> SignUpScreen(
+                            viewModel = authViewModel,
+                            onSignUpSuccess = {},
+                            onBackToLogin = { authScreen = "login" }
+                        )
+                        "forgot_password" -> ForgotPasswordScreen(
+                            viewModel = authViewModel,
+                            onBackToLogin = { authScreen = "login" }
+                        )
                     }
                 }
             }

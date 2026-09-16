@@ -37,6 +37,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         checkExistingSession()
     }
 
+    fun getStoredToken(): String? {
+        return repository.getStoredToken()
+    }
+
     fun checkExistingSession() {
         val token = repository.getStoredToken()
         if (token != null) {
@@ -62,9 +66,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("AuthDebug", "HTTP Error $code on endpoint $endpoint. Body: $errorBody")
                 when (code) {
                     400 -> "Please check your information."
-                    401 -> "Incorrect username, email, phone number or password."
+                    401 -> "Your session has expired. Please log in again."
                     404 -> "Authentication endpoint not found. Please ensure the backend is deployed on Render."
                     409 -> "Username, email or mobile number is already registered."
+                    429 -> "Too many requests. Please try again later."
                     500 -> "Server error. Please try again later."
                     else -> "Request failed (HTTP $code). Please try again."
                 }
@@ -102,7 +107,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.login(identifier, pass)
                 if (res.status == "SUCCESS") {
-                    // Fetch latest /me to ensure accurate verification status from db
                     val user = repository.getMe() ?: res.user
                     _currentUser.value = user
                     _uiState.value = AuthUiState.Authenticated(user)
@@ -221,7 +225,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.verifyEmail(otp)
                 if (res.status == "SUCCESS") {
-                    // Refresh user state from DB via GET /me
                     val user = repository.getMe()
                     if (user != null) {
                         _currentUser.value = user
@@ -256,7 +259,6 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.verifyPhone(otp)
                 if (res.status == "SUCCESS") {
-                    // Refresh user state from DB via GET /me
                     val user = repository.getMe()
                     if (user != null) {
                         _currentUser.value = user
