@@ -1,5 +1,15 @@
 package com.example.smartcityassistant.weather
 
+data class ForecastDayDto(
+    val date: String,
+    val dayName: String,
+    val weatherCode: Int,
+    val condition: String,
+    val maxTemp: Double,
+    val minTemp: Double,
+    val precipitationProbabilityMax: Double?
+)
+
 data class WeatherResponseDto(
     val status: String,
     val temperature: Double?,
@@ -11,6 +21,7 @@ data class WeatherResponseDto(
     val sunrise: String?,
     val sunset: String?,
     val source: String?,
+    val forecast: List<ForecastDayDto>?,
     val message: String?
 )
 
@@ -25,6 +36,7 @@ sealed interface WeatherUiState {
         val weatherCode: Int,
         val sunrise: String,
         val sunset: String,
+        val forecast: List<ForecastDayDto> = emptyList(),
         val isCached: Boolean = false,
         val lastUpdatedText: String = "LIVE"
     ) : WeatherUiState

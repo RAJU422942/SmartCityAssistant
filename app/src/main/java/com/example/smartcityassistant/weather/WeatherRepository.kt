@@ -60,6 +60,7 @@ class WeatherRepository(context: Context) {
                 weatherCode = resp.weatherCode ?: 2,
                 sunrise = resp.sunrise ?: "06:00 AM",
                 sunset = resp.sunset ?: "06:30 PM",
+                forecast = resp.forecast ?: emptyList(),
                 isCached = isExpired,
                 lastUpdatedText = updatedText
             )
@@ -97,6 +98,7 @@ class WeatherRepository(context: Context) {
                     weatherCode = response.weatherCode ?: 2,
                     sunrise = response.sunrise ?: "06:00 AM",
                     sunset = response.sunset ?: "06:30 PM",
+                    forecast = response.forecast ?: emptyList(),
                     isCached = false,
                     lastUpdatedText = "LIVE"
                 )

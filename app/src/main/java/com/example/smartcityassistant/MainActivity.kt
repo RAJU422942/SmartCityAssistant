@@ -285,6 +285,8 @@ fun MainNavigation() {
     var selectedReportForDetails by remember { mutableStateOf<Report?>(null) }
     val sharedAqiViewModel: AqiViewModel = viewModel()
     val aqiState by sharedAqiViewModel.uiState.collectAsState()
+    val sharedWeatherViewModel: WeatherViewModel = viewModel()
+    val weatherState by sharedWeatherViewModel.uiState.collectAsState()
 
     // Transport Module States
     var baseTransportLocation by remember { mutableStateOf<TransportLocation?>(null) }
@@ -343,7 +345,17 @@ fun MainNavigation() {
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
-                "home" -> SmartCityHomeScreen(aqiViewModel = sharedAqiViewModel) { currentScreen = it }
+                "home" -> SmartCityHomeScreen(
+                    aqiViewModel = sharedAqiViewModel,
+                    weatherViewModel = sharedWeatherViewModel
+                ) { currentScreen = it }
+                "weather_details" -> {
+                    WeatherDetailsScreen(
+                        weatherState = weatherState,
+                        onRetry = { sharedWeatherViewModel.retry() },
+                        onBack = { currentScreen = "home" }
+                    )
+                }
                 "emergency" -> EmergencyCenterScreen { currentScreen = "home" }
                 "report" -> ReportProblemScreen(
                     onBack = { currentScreen = "home" },
@@ -544,10 +556,9 @@ fun getWeatherConditionText(weatherCode: Int?): String {
 }
 
 @Composable
-fun LocalConditionsCard(
+fun WeatherSummaryCard(
     weatherState: WeatherUiState,
-    aqiState: AqiUiState,
-    onWeatherRetry: () -> Unit,
+    onRetry: () -> Unit,
     onClick: () -> Unit
 ) {
     Card(
@@ -559,19 +570,21 @@ fun LocalConditionsCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("LOCAL CONDITIONS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                Text("WEATHER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("View Forecast", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SecondaryBlue, modifier = Modifier.size(16.dp))
+                }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Weather Section
             when (weatherState) {
                 is WeatherUiState.Loading -> {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
@@ -582,7 +595,7 @@ fun LocalConditionsCard(
                 }
                 is WeatherUiState.Error -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onWeatherRetry() }.padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onRetry() }.padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -600,106 +613,287 @@ fun LocalConditionsCard(
                             WeatherIcon(weatherCode = weatherState.weatherCode)
                             Spacer(modifier = Modifier.width(14.dp))
                             Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${weatherState.temperature.toInt()}°C",
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = PrimaryNavy
-                                    )
-                                }
+                                Text(
+                                    text = "${weatherState.temperature.toInt()}°C",
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryNavy
+                                )
                                 Text(
                                     text = getWeatherConditionText(weatherState.weatherCode),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
+                                    fontSize = 13.sp,
                                     color = MainText
                                 )
                                 Text(
                                     text = "Feels like ${weatherState.apparentTemperature.toInt()}°C",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = SecondaryText
                                 )
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
 
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = DividerColor)
-                    Spacer(modifier = Modifier.height(12.dp))
+@Composable
+fun AirQualitySummaryCard(
+    aqiState: AqiUiState,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("AIR QUALITY (AQI)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("View Details", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = SecondaryBlue)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SecondaryBlue, modifier = Modifier.size(16.dp))
+                }
+            }
 
-                    // Metrics Row (AQI + Humidity + Wind)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            when (aqiState) {
+                is AqiUiState.Loading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Loading AQI...", fontSize = 13.sp, color = Color.Gray)
+                    }
+                }
+                is AqiUiState.Error -> {
+                    Text("AQI unavailable", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                }
+                is AqiUiState.NoNearby -> {
+                    Text("AQI unavailable nearby", fontSize = 13.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+                }
+                is AqiUiState.Success -> {
+                    val style = AqiClassification.getStyle(aqiState.aqi)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // AQI Mini Badge
-                        when (aqiState) {
-                            is AqiUiState.Success -> {
-                                val style = AqiClassification.getStyle(aqiState.aqi)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = aqiState.aqi.toString(),
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = style.textColor,
+                                modifier = Modifier
+                                    .background(style.backgroundColor, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = aqiState.category,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MainText
+                                )
+                                Text(
+                                    text = aqiState.sourceLabel ?: if (aqiState.source == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station",
+                                    fontSize = 11.sp,
+                                    color = SecondaryText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeatherDetailsScreen(
+    weatherState: WeatherUiState,
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundGray)
+    ) {
+        AqiTopAppBar(title = "Weather & Forecast", onBack = onBack)
+
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            when (weatherState) {
+                is WeatherUiState.Loading -> {
+                    Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = SecondaryBlue)
+                    }
+                }
+                is WeatherUiState.Error -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Weather unavailable", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MainText)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(weatherState.message, fontSize = 14.sp, color = SecondaryText, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = SecondaryBlue)) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                }
+                is WeatherUiState.Success -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Text("Current Conditions", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "AQI ${aqiState.aqi}",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = style.textColor,
-                                            modifier = Modifier
-                                                .background(style.backgroundColor, RoundedCornerShape(6.dp))
-                                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(aqiState.category, fontSize = 11.sp, color = SecondaryText, maxLines = 1)
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = aqiState.sourceLabel ?: if (aqiState.source == "OPEN_METEO") "Open-Meteo • CAMS" else "CPCB • Monitoring Station",
-                                        fontSize = 10.sp,
-                                        color = Color.Gray
+                                        text = "${weatherState.temperature.toInt()}°C",
+                                        fontSize = 44.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryNavy
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = getWeatherConditionText(weatherState.weatherCode),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = MainText
+                                    )
+                                    Text(
+                                        text = "Feels like ${weatherState.apparentTemperature.toInt()}°C",
+                                        fontSize = 13.sp,
+                                        color = SecondaryText
                                     )
                                 }
-                            }
-                            is AqiUiState.NoNearby -> {
-                                Text("AQI unavailable nearby", fontSize = 12.sp, color = SecondaryText)
-                            }
-                            is AqiUiState.Error -> {
-                                Text("AQI unavailable", fontSize = 12.sp, color = SecondaryText)
-                            }
-                            is AqiUiState.Loading -> {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Loading AQI...", fontSize = 12.sp, color = SecondaryText)
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("💧", fontSize = 12.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("${weatherState.humidity}%", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MainText)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("💨", fontSize = 12.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("${weatherState.windSpeed.toInt()} km/h", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MainText)
+                                WeatherIcon(weatherCode = weatherState.weatherCode)
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = DividerColor)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Sun times
-                    Row(
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Text("🌅 ${weatherState.sunrise}", fontSize = 12.sp, color = SecondaryText)
-                        Text("🌇 ${weatherState.sunset}", fontSize = 12.sp, color = SecondaryText)
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text("Today's Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            WeatherDetailRow("Humidity", "${weatherState.humidity}%", "💧")
+                            WeatherDetailRow("Wind Speed", "${weatherState.windSpeed.toInt()} km/h", "💨")
+                            weatherState.forecast.firstOrNull()?.precipitationProbabilityMax?.let { rainProb ->
+                                WeatherDetailRow("Rain Probability", "${rainProb.toInt()}%", "🌧️")
+                            }
+                            WeatherDetailRow("Sunrise", weatherState.sunrise, "🌅")
+                            WeatherDetailRow("Sunset", weatherState.sunset, "🌇")
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text("7-Day Forecast", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            weatherState.forecast.forEach { day ->
+                                ForecastDayRow(day)
+                                Spacer(modifier = Modifier.height(10.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeatherDetailRow(label: String, value: String, iconSymbol: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(iconSymbol, fontSize = 16.sp)
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(label, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MainText)
+        }
+        Text(value, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PrimaryNavy)
+    }
+}
+
+@Composable
+fun ForecastDayRow(day: ForecastDayDto) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            WeatherIcon(weatherCode = day.weatherCode)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(day.dayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MainText)
+                Text(day.condition, fontSize = 12.sp, color = SecondaryText)
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "${day.maxTemp.toInt()}° / ${day.minTemp.toInt()}°",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = PrimaryNavy
+            )
+            day.precipitationProbabilityMax?.let { rain ->
+                if (rain > 0) {
+                    Text("${rain.toInt()}% rain", fontSize = 11.sp, color = SecondaryBlue)
                 }
             }
         }
@@ -708,7 +902,11 @@ fun LocalConditionsCard(
 
 @SuppressLint("MissingPermission")
 @Composable
-fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (String) -> Unit) {
+fun SmartCityHomeScreen(
+    aqiViewModel: AqiViewModel = viewModel(),
+    weatherViewModel: WeatherViewModel = viewModel(),
+    onNavigate: (String) -> Unit
+) {
     val context = LocalContext.current
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val scope = rememberCoroutineScope()
@@ -722,7 +920,6 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
     val aqiState by aqiViewModel.uiState.collectAsState()
-    val weatherViewModel: WeatherViewModel = viewModel()
     val weatherState by weatherViewModel.uiState.collectAsState()
 
     var fetchCurrentLocation: () -> Unit = {}
@@ -902,11 +1099,16 @@ fun SmartCityHomeScreen(aqiViewModel: AqiViewModel = viewModel(), onNavigate: (S
         }
 
         Column(modifier = Modifier.padding(20.dp).verticalScroll(scrollState)) {
-            LocalConditionsCard(
-                weatherState = weatherState,
-                aqiState = aqiState,
-                onWeatherRetry = { weatherViewModel.retry() }
-            ) {
+            Text("LOCAL CONDITIONS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            WeatherSummaryCard(weatherState = weatherState, onRetry = { weatherViewModel.retry() }) {
+                onNavigate("weather_details")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            AirQualitySummaryCard(aqiState = aqiState) {
                 onNavigate("aqi_details")
             }
 

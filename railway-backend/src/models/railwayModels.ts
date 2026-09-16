@@ -68,6 +68,16 @@ export interface BackendAqiResponse {
   sourceLabel?: string | null;
 }
 
+export interface ForecastDay {
+  date: string;
+  dayName: string;
+  weatherCode: number;
+  condition: string;
+  maxTemp: number;
+  minTemp: number;
+  precipitationProbabilityMax: number | null;
+}
+
 export interface BackendWeatherResponse {
   status: string;
   temperature: number | null;
@@ -79,6 +89,7 @@ export interface BackendWeatherResponse {
   sunrise: string | null;
   sunset: string | null;
   source: string | null;
+  forecast?: ForecastDay[];
   message?: string | null;
 }
 

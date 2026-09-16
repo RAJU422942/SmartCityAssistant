@@ -414,7 +414,7 @@ export class RailwayProviderService {
     try {
       const userLat = parseFloat(lat);
       const userLon = parseFloat(lon);
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=sunrise,sunset&timezone=auto`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto`;
       const res = await this.fetchWithTimeout(url);
       if (!res.ok) {
         console.log(`[WEATHER ERROR] requestId=${requestId} httpStatus=${res.status}`);
@@ -452,7 +452,37 @@ export class RailwayProviderService {
       const sunriseIso = daily?.sunrise?.[0] || '';
       const sunsetIso = daily?.sunset?.[0] || '';
 
-      console.log(`[WEATHER SUCCESS] requestId=${requestId} temp=${current.temperature_2m} code=${code}`);
+      const forecast: any[] = [];
+      if (daily && daily.time) {
+        for (let i = 0; i < daily.time.length; i++) {
+          const dStr = daily.time[i];
+          const dCode = daily.weather_code[i];
+          let dCond = 'Partly Cloudy';
+          if (dCode === 0) dCond = 'Sunny';
+          else if (dCode >= 1 && dCode <= 3) dCond = 'Partly Cloudy';
+          else if (dCode === 45 || dCode === 48) dCond = 'Foggy';
+          else if (dCode >= 51 && dCode <= 57) dCond = 'Drizzle';
+          else if (dCode >= 61 && dCode <= 67) dCond = 'Rainy';
+          else if (dCode >= 71 && dCode <= 77) dCond = 'Snow';
+          else if (dCode >= 80 && dCode <= 82) dCond = 'Showers';
+          else if (dCode >= 95) dCond = 'Thunderstorm';
+
+          const dateObj = new Date(dStr);
+          const dayName = i === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+          forecast.push({
+            date: dStr,
+            dayName,
+            weatherCode: dCode,
+            condition: dCond,
+            maxTemp: daily.temperature_2m_max[i],
+            minTemp: daily.temperature_2m_min[i],
+            precipitationProbabilityMax: daily.precipitation_probability_max?.[i] ?? null
+          });
+        }
+      }
+
+      console.log(`[WEATHER SUCCESS] requestId=${requestId} temp=${current.temperature_2m} code=${code} forecastDays=${forecast.length}`);
 
       return {
         status: 'OK',
@@ -464,7 +494,8 @@ export class RailwayProviderService {
         weatherCode: code ?? null,
         sunrise: formatTime(sunriseIso),
         sunset: formatTime(sunsetIso),
-        source: 'Open-Meteo'
+        source: 'Open-Meteo',
+        forecast
       };
     } catch (e: any) {
       console.log(`[WEATHER EXCEPTION] requestId=${requestId} error=${e.message}`);

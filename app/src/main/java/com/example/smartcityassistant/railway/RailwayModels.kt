@@ -1,5 +1,7 @@
 package com.example.smartcityassistant.railway
 
+import com.example.smartcityassistant.weather.ForecastDayDto
+
 data class Train(
     val number: String,
     val name: String,
@@ -117,5 +119,6 @@ data class WeatherResponseDto(
     val sunrise: String?,
     val sunset: String?,
     val source: String?,
+    val forecast: List<ForecastDayDto>?,
     val message: String?
 )
