@@ -17,11 +17,34 @@ import com.example.smartcityassistant.ui.documents.*
 import com.example.smartcityassistant.util.*
 import com.example.smartcityassistant.ui.emergency.*
 import com.example.smartcityassistant.ui.ai.*
+import com.example.smartcityassistant.ui.auth.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.app.NotificationManager
+import android.app.NotificationChannel
+import android.app.PendingIntent
+import androidx.core.app.NotificationCompat
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.abs
+import kotlin.math.atan2
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -63,6 +86,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -88,6 +112,9 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import android.location.Geocoder
+import android.media.AudioManager
+import android.media.ToneGenerator
+
 import com.example.smartcityassistant.BuildConfig
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.Place
@@ -106,12 +133,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 // --- Color System ---
 val PrimaryNavy = Color(0xFF0D2B45)
@@ -266,7 +296,34 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SmartCityAssistantTheme {
-                MainNavigation()
+                val authViewModel: AuthViewModel = viewModel()
+                val authState by authViewModel.uiState.collectAsState()
+                var authScreen by remember { mutableStateOf("login") }
+
+                when (authState) {
+                    is AuthUiState.Authenticated -> {
+                        MainNavigation(authViewModel = authViewModel)
+                    }
+                    else -> {
+                        when (authScreen) {
+                            "login" -> LoginScreen(
+                                viewModel = authViewModel,
+                                onLoginSuccess = {},
+                                onNavigateToSignUp = { authScreen = "signup" },
+                                onNavigateToForgotPassword = { authScreen = "forgot_password" }
+                            )
+                            "signup" -> SignUpScreen(
+                                viewModel = authViewModel,
+                                onSignUpSuccess = {},
+                                onBackToLogin = { authScreen = "login" }
+                            )
+                            "forgot_password" -> ForgotPasswordScreen(
+                                viewModel = authViewModel,
+                                onBackToLogin = { authScreen = "login" }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -289,8 +346,20 @@ fun mapActionToRoute(action: String?): String? {
 }
 
 @Composable
-fun MainNavigation() {
-    var currentScreen by rememberSaveable { mutableStateOf("home") }
+fun MainNavigation(authViewModel: AuthViewModel) {
+    val activity = LocalContext.current as? ComponentActivity
+    var currentScreen by rememberSaveable {
+        mutableStateOf(activity?.intent?.getStringExtra("navigate_to") ?: "home")
+    }
+    LaunchedEffect(Unit) {
+        activity?.intent?.removeExtra("navigate_to")
+    }
+    val context = LocalContext.current
+    LaunchedEffect(currentScreen) {
+        if (currentScreen != "home" && currentScreen != "explore" && currentScreen != "profile") {
+            RecentServicesRepository.addRecentService(context, currentScreen)
+        }
+    }
     var selectedReportForDetails by remember { mutableStateOf<Report?>(null) }
     val sharedAqiViewModel: AqiViewModel = viewModel()
     val aqiState by sharedAqiViewModel.uiState.collectAsState()
@@ -391,6 +460,7 @@ fun MainNavigation() {
                     }
                 }
                 "emergency" -> EmergencyCenterScreen { currentScreen = "home" }
+                "compass" -> CompassScreen(onBack = { currentScreen = "home" })
                 "report" -> ReportProblemScreen(
                     onBack = { currentScreen = "home" },
                     onSuccess = { report ->
@@ -513,7 +583,34 @@ fun MainNavigation() {
                 }
                 "profile" -> {
                     val profileViewModel: ProfileViewModel = viewModel()
-                    ProfileScreen(viewModel = profileViewModel, onBack = { currentScreen = "home" })
+                    ProfileScreen(
+                        viewModel = profileViewModel,
+                        onBack = { currentScreen = "home" },
+                        onNavigateToVerification = { currentScreen = "verification" },
+                        onLogout = { authViewModel.logout {} }
+                    )
+                }
+                "verification" -> {
+                    VerificationScreen(
+                        viewModel = authViewModel,
+                        onBack = { currentScreen = "profile" },
+                        onNavigateToEmailOtp = { currentScreen = "email_otp" },
+                        onNavigateToMobileOtp = { currentScreen = "mobile_otp" }
+                    )
+                }
+                "email_otp" -> {
+                    EmailOtpScreen(
+                        viewModel = authViewModel,
+                        onVerified = { currentScreen = "verification" },
+                        onBack = { currentScreen = "verification" }
+                    )
+                }
+                "mobile_otp" -> {
+                    MobileOtpScreen(
+                        viewModel = authViewModel,
+                        onVerified = { currentScreen = "verification" },
+                        onBack = { currentScreen = "verification" }
+                    )
                 }
                 "city_alerts" -> {
                     val cityAlertsViewModel: CityAlertsViewModel = viewModel()
@@ -1609,7 +1706,8 @@ fun SmartCityHomeScreen(
             ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
             ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
             ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
-            ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
+            ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB)),
+            ModuleData("Compass", "Find your direction", Icons.Default.Navigation, "compass", Color(0xFF00897B))
         )
     }
 
@@ -1648,6 +1746,9 @@ fun SmartCityHomeScreen(
                     if (loc != null) {
                         searchedLat = loc.latitude
                         searchedLon = loc.longitude
+                        AppLocationState.lat = loc.latitude
+                        AppLocationState.lon = loc.longitude
+                        AppLocationState.elevation = if (loc.hasAltitude()) loc.altitude else null
                         scope.launch {
                             val address = TransportService.getAddressFromLocation(context, loc.latitude, loc.longitude)
                             locationText = if (address.isNotBlank() && address != "Unknown Location" && address != "Location detected") {
@@ -1720,6 +1821,9 @@ fun SmartCityHomeScreen(
                                     val addr = addresses[0]
                                     searchedLat = addr.latitude
                                     searchedLon = addr.longitude
+                                    AppLocationState.lat = addr.latitude
+                                    AppLocationState.lon = addr.longitude
+                                    AppLocationState.elevation = null
                                     locationText = addr.getAddressLine(0) ?: searchQuery
                                     showSearchDialog = false
                                     searchQuery = ""
@@ -1880,7 +1984,8 @@ fun SmartCityHomeScreen(
                     ModuleData("Government", "Services • Schemes", Icons.Default.AccountBalance, "government", Color(0xFF8E24AA)),
                     ModuleData("City Alerts", "Local Notifications", Icons.Default.Notifications, "city_alerts", Color(0xFFFB8C00)),
                     ModuleData("My Complaints", "View History", Icons.AutoMirrored.Filled.Assignment, "complaints", Color(0xFF2E7D32)),
-                    ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB))
+                    ModuleData("AI Assistant", "Ask anything", Icons.Default.SmartToy, "ai_assistant", Color(0xFF3949AB)),
+                    ModuleData("Compass", "Find your direction", Icons.Default.Navigation, "compass", Color(0xFF00897B))
                 )
 
                 val chunkedModules = modules.chunked(2)
@@ -5265,4 +5370,1085 @@ fun ProfilePlaceholder(onBack: () -> Unit) {
             Text("Back to Home", color = Color.White)
         }
     }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+fun CompassScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val prefs = remember { context.getSharedPreferences("smart_city_compass", Context.MODE_PRIVATE) }
+
+    var soundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
+    var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", false)) }
+
+    var azimuth by remember { mutableStateOf(0f) }
+    var sensorAvailable by remember { mutableStateOf(true) }
+    var sensorAccuracy by remember { mutableStateOf(SensorManager.SENSOR_STATUS_ACCURACY_HIGH) }
+
+    val directionText = getCardinalDirection(azimuth)
+    val fullDirectionName = getFullDirectionName(azimuth)
+    val accuracyText = when (sensorAccuracy) {
+        SensorManager.SENSOR_STATUS_ACCURACY_HIGH -> "Good"
+        SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM -> "Moderate"
+        SensorManager.SENSOR_STATUS_ACCURACY_LOW, SensorManager.SENSOR_STATUS_UNRELIABLE -> "Low"
+        else -> "Good"
+    }
+
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    var userLat by remember { mutableStateOf(AppLocationState.lat) }
+    var userLon by remember { mutableStateOf(AppLocationState.lon) }
+    var userElevation by remember { mutableStateOf(AppLocationState.elevation) }
+    var isFetchingLocation by remember { mutableStateOf(false) }
+
+    val fetchLocationForCompass: () -> Unit = {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
+            isFetchingLocation = true
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                isFetchingLocation = false
+                if (loc != null) {
+                    AppLocationState.lat = loc.latitude
+                    AppLocationState.lon = loc.longitude
+                    AppLocationState.elevation = if (loc.hasAltitude()) loc.altitude else null
+                    userLat = loc.latitude
+                    userLon = loc.longitude
+                    userElevation = if (loc.hasAltitude()) loc.altitude else null
+                } else {
+                    fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                        .addOnSuccessListener { curLoc ->
+                            isFetchingLocation = false
+                            if (curLoc != null) {
+                                AppLocationState.lat = curLoc.latitude
+                                AppLocationState.lon = curLoc.longitude
+                                AppLocationState.elevation = if (curLoc.hasAltitude()) curLoc.altitude else null
+                                userLat = curLoc.latitude
+                                userLon = curLoc.longitude
+                                userElevation = if (curLoc.hasAltitude()) curLoc.altitude else null
+                            }
+                        }
+                        .addOnFailureListener { isFetchingLocation = false }
+                }
+            }.addOnFailureListener { isFetchingLocation = false }
+        } else {
+            Toast.makeText(context, "Location permission is required to detect location.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    var wmmResult by remember { mutableStateOf<WmmResult?>(null) }
+
+    LaunchedEffect(userLat, userLon, userElevation) {
+        if (userLat != null && userLon != null) {
+            val elev = userElevation ?: 0.0
+            val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+            val y = calendar.get(Calendar.YEAR)
+            val isLeap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+            val year = y + (calendar.get(Calendar.DAY_OF_YEAR) - 1).toDouble() / (if (isLeap) 366.0 else 365.0)
+            wmmResult = WmmCalculator.calculateWmm(userLat!!, userLon!!, elev, year)
+        } else {
+            wmmResult = null
+        }
+    }
+
+    val declination = wmmResult?.declination ?: 0.0
+    val trueAzimuth = (azimuth + declination.toFloat() + 360f) % 360f
+    val trueDirectionText = getCardinalDirection(trueAzimuth)
+
+    var isLocked by remember { mutableStateOf(false) }
+    var lockedAzimuth by remember { mutableStateOf(0f) }
+    var showCalibrateDialog by remember { mutableStateOf(false) }
+
+    var lastTickAzimuth by remember { mutableStateOf(0f) }
+    var currentZone by remember { mutableStateOf("N") }
+    var hasTriggeredLockFix by remember { mutableStateOf(false) }
+
+    val vibrator = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
+
+    var isStopped by remember { mutableStateOf(false) }
+
+    val stopCompassSession: () -> Unit = {
+        if (!isStopped) {
+            isStopped = true
+            try {
+                val serviceIntent = Intent(context, CompassLifecycleService::class.java)
+                context.stopService(serviceIntent)
+            } catch (e: Exception) {}
+
+            try {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(1001)
+            } catch (e: Exception) {}
+
+            view.keepScreenOn = false
+            onBack()
+        }
+    }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showOrUpdateCompassNotification(
+                context, azimuth, directionText, fullDirectionName, accuracyText,
+                soundEnabled, vibrationEnabled, isLocked, lockedAzimuth
+            )
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            val serviceIntent = Intent(context, CompassLifecycleService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {}
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                if (i?.action == "com.example.smartcityassistant.ACTION_DISMISS_COMPASS" ||
+                    i?.action == "com.example.smartcityassistant.ACTION_STOP_COMPASS") {
+                    stopCompassSession()
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction("com.example.smartcityassistant.ACTION_DISMISS_COMPASS")
+            addAction("com.example.smartcityassistant.ACTION_STOP_COMPASS")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (e: Exception) {}
+            stopCompassSession()
+        }
+    }
+
+    var lastNotifAzimuth by remember { mutableStateOf(-999f) }
+    LaunchedEffect(azimuth, soundEnabled, vibrationEnabled, isLocked, lockedAzimuth, sensorAccuracy) {
+        if (abs(azimuth - lastNotifAzimuth) >= 3f || isLocked) {
+            lastNotifAzimuth = azimuth
+            showOrUpdateCompassNotification(
+                context, azimuth, directionText, fullDirectionName, accuracyText,
+                soundEnabled, vibrationEnabled, isLocked, lockedAzimuth
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val rotationVectorSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+
+        val listener = object : SensorEventListener {
+            private val gravity = FloatArray(3)
+            private val geomagnetic = FloatArray(3)
+            private val orientation = FloatArray(3)
+            private val rotationMatrix = FloatArray(9)
+
+            override fun onSensorChanged(event: SensorEvent) {
+                var newAzimuth: Float? = null
+                if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                    SensorManager.getOrientation(rotationMatrix, orientation)
+                    var azimuthRad = orientation[0]
+                    var azimuthDeg = Math.toDegrees(azimuthRad.toDouble()).toFloat()
+                    azimuthDeg = (azimuthDeg + 360) % 360
+                    newAzimuth = azimuthDeg
+                } else if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                    System.arraycopy(event.values, 0, gravity, 0, event.values.size)
+                } else if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+                    System.arraycopy(event.values, 0, geomagnetic, 0, event.values.size)
+                }
+                if (event.sensor.type == Sensor.TYPE_ACCELEROMETER || event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+                    val success = SensorManager.getRotationMatrix(rotationMatrix, null, gravity, geomagnetic)
+                    if (success) {
+                        SensorManager.getOrientation(rotationMatrix, orientation)
+                        var azimuthRad = orientation[0]
+                        var azimuthDeg = Math.toDegrees(azimuthRad.toDouble()).toFloat()
+                        azimuthDeg = (azimuthDeg + 360) % 360
+                        newAzimuth = azimuthDeg
+                    }
+                }
+
+                newAzimuth?.let { azimuthDeg ->
+                    val diff = ((azimuthDeg - azimuth + 540) % 360) - 180
+                    azimuth = (azimuth + 0.15f * diff + 360) % 360
+
+                    // Movement ticks (every ~12°)
+                    val tickDiff = abs(azimuth - lastTickAzimuth)
+                    if (tickDiff >= 12f) {
+                        lastTickAzimuth = azimuth
+                        if (soundEnabled) {
+                            playCompassSound(1200, 15, 0.15f)
+                        }
+                    }
+
+                    // Zone change detection
+                    val newZone = getDirectionZone(azimuth)
+                    if (newZone != currentZone) {
+                        currentZone = newZone
+                        if (soundEnabled) {
+                            when (newZone) {
+                                "N", "E", "S", "W" -> playCompassSound(659, 55, 0.45f)
+                                else -> playCompassSound(523, 40, 0.3f)
+                            }
+                        }
+                        if (vibrationEnabled) {
+                            triggerVibration(vibrator, vibrationEnabled, false)
+                        }
+                    }
+
+                    // Direction Lock Fixed check
+                    if (isLocked) {
+                        val lockDiff = ((azimuth - lockedAzimuth + 540) % 360) - 180
+                        if (abs(lockDiff) <= 3f) {
+                            if (!hasTriggeredLockFix) {
+                                hasTriggeredLockFix = true
+                                if (soundEnabled) {
+                                    playCompassSound(880, 80, 0.6f)
+                                }
+                                if (vibrationEnabled) {
+                                    triggerVibration(vibrator, vibrationEnabled, true)
+                                }
+                            }
+                        } else if (abs(lockDiff) > 5f) {
+                            hasTriggeredLockFix = false
+                        }
+                    }
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+                sensorAccuracy = accuracy
+            }
+        }
+
+        if (rotationVectorSensor != null) {
+            sensorManager?.registerListener(listener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI)
+        } else if (accelerometer != null && magnetometer != null) {
+            sensorManager?.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+            sensorManager?.registerListener(listener, magnetometer, SensorManager.SENSOR_DELAY_UI)
+        } else {
+            sensorAvailable = false
+        }
+
+        onDispose {
+            sensorManager?.unregisterListener(listener)
+            view.keepScreenOn = false
+        }
+    }
+
+
+
+    if (showCalibrateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCalibrateDialog = false },
+            title = { Text("Calibrate Compass", fontWeight = FontWeight.Bold, color = PrimaryNavy) },
+            text = {
+                Text("Move your phone slowly in a figure-8 motion to improve compass accuracy.", fontSize = 14.sp, color = MainText)
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showCalibrateDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                ) {
+                    Text("OK", color = Color.White)
+                }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundGray)
+    ) {
+        TopAppBar(title = "Compass", onBack = { stopCompassSession() })
+
+        if (!sensorAvailable) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Compass sensor is not available on this device.",
+                    fontSize = 16.sp,
+                    color = SecondaryText,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Accuracy status
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Accuracy: $accuracyText", fontSize = 12.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // LARGE COMPASS (300.dp, ~60-70% screen width)
+                Box(
+                    modifier = Modifier
+                        .size(300.dp)
+                        .background(Color.White, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(rotationZ = azimuth),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.size(210.dp)) {
+                            val w = size.width
+                            val h = size.height
+                            val cx = w / 2
+                            val cy = h / 2
+
+                            drawPath(
+                                path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(cx, 16f)
+                                    lineTo(cx - 12f, cy)
+                                    lineTo(cx + 12f, cy)
+                                    close()
+                                },
+                                color = ErrorRed
+                            )
+                            drawPath(
+                                path = androidx.compose.ui.graphics.Path().apply {
+                                    moveTo(cx, h - 16f)
+                                    lineTo(cx - 12f, cy)
+                                    lineTo(cx + 12f, cy)
+                                    close()
+                                },
+                                color = Color.Gray
+                            )
+                        }
+                    }
+
+                    Text("N", fontWeight = FontWeight.Bold, color = ErrorRed, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
+                    Text("NE", fontWeight = FontWeight.Bold, color = MainText, fontSize = 14.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = 32.dp))
+                    Text("E", fontWeight = FontWeight.Bold, color = MainText, fontSize = 18.sp, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 14.dp))
+                    Text("SE", fontWeight = FontWeight.Bold, color = MainText, fontSize = 14.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 32.dp, end = 32.dp))
+                    Text("S", fontWeight = FontWeight.Bold, color = Color.Gray, fontSize = 18.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
+                    Text("SW", fontWeight = FontWeight.Bold, color = MainText, fontSize = 14.sp, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 32.dp, start = 32.dp))
+                    Text("W", fontWeight = FontWeight.Bold, color = MainText, fontSize = 18.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 14.dp))
+                    Text("NW", fontWeight = FontWeight.Bold, color = MainText, fontSize = 14.sp, modifier = Modifier.align(Alignment.TopStart).padding(top = 32.dp, start = 32.dp))
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Heading Degrees & Cardinal
+                Text(
+                    text = "${azimuth.toInt()}° $directionText",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryNavy
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = fullDirectionName,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SecondaryText
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // NOAA-style Heading Presentation Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("MAGNETIC HEADING", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("${azimuth.toInt()}° $directionText", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("TRUE HEADING", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("${trueAzimuth.toInt()}° $trueDirectionText", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "True heading is corrected for Earth's magnetic declination.",
+                            fontSize = 11.sp,
+                            color = SecondaryText
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Geomagnetic Field Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Geomagnetic Field", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("World Magnetic Model • WMM2025", fontSize = 11.sp, color = SecondaryText)
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        if (userLat == null || userLon == null) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("Location required for magnetic field data", fontSize = 13.sp, color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { fetchLocationForCompass() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    if (isFetchingLocation) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    } else {
+                                        Text("Use Current Location", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        } else if (wmmResult == null) {
+                            Text("Geomagnetic data unavailable", fontSize = 13.sp, color = ErrorRed)
+                        } else {
+                            GeomagneticFieldDiagram(
+                                azimuth = azimuth,
+                                declination = wmmResult!!.declination,
+                                inclination = wmmResult!!.inclination,
+                                directionText = directionText
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Declination", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val dec = wmmResult!!.declination
+                                    Text(String.format(Locale.getDefault(), "%.1f° %s", abs(dec), if (dec >= 0) "E" else "W"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Inclination", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val inc = wmmResult!!.inclination
+                                    Text(String.format(Locale.getDefault(), "%.1f° %s", abs(inc), if (inc >= 0) "Down" else "Up"), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Horizontal Field", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(String.format(Locale.getDefault(), "%,.0f nT", wmmResult!!.horizontalField), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Vertical Field", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(String.format(Locale.getDefault(), "%,.0f nT", wmmResult!!.verticalField), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text("Total Field", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(String.format(Locale.getDefault(), "%,.0f nT", wmmResult!!.totalField), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text("Elevation", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val elev = userElevation
+                                Text(if (elev != null) String.format(Locale.getDefault(), "%.0f m", elev) else "Data unavailable", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MainText)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Geomagnetic values are model estimates and may differ from local magnetic measurements.",
+                            fontSize = 10.sp,
+                            color = SecondaryText
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Small explanation text
+                Text(
+                    text = "Sound gives a short tick as you rotate. A different tone confirms a direction.\nHold your phone flat for better accuracy.",
+                    fontSize = 12.sp,
+                    color = SecondaryText,
+                    textAlign = TextAlign.Center
+                )
+
+                // Direction Lock info if locked
+                if (isLocked) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    val diff = ((azimuth - lockedAzimuth + 540) % 360) - 180
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("🔒 Direction Locked", fontWeight = FontWeight.Bold, color = PrimaryNavy, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Target: ${lockedAzimuth.toInt()}° ${getCardinalDirection(lockedAzimuth)}", fontSize = 13.sp, color = SecondaryText)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (abs(diff) <= 3f) {
+                                Text("✓ Direction Fixed", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), fontSize = 16.sp)
+                            } else {
+                                val directionTurn = if (diff > 0) "Turn Left" else "Turn Right"
+                                Text("Difference: ${abs(diff).toInt()}° ($directionTurn)", fontSize = 13.sp, color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Compact Controls Section (Sound & Vibration)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔊 Sound", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = soundEnabled,
+                                onCheckedChange = {
+                                    soundEnabled = it
+                                    prefs.edit().putBoolean("sound_enabled", it).apply()
+                                }
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("📳 Vibration", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MainText)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = vibrationEnabled,
+                                onCheckedChange = {
+                                    vibrationEnabled = it
+                                    prefs.edit().putBoolean("vibration_enabled", it).apply()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Action Buttons Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (isLocked) {
+                                isLocked = false
+                            } else {
+                                isLocked = true
+                                lockedAzimuth = azimuth
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(if (isLocked) "Unlock" else "Lock Direction", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { showCalibrateDialog = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = SecondaryBlue),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Calibrate", color = PrimaryNavy, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(30.dp))
+            }
+        }
+    }
+}
+
+fun playCompassSound(frequency: Int, durationMs: Int, volume: Float) {
+    try {
+        val sampleRate = 22050
+        val numSamples = (sampleRate * durationMs) / 1000
+        val buffer = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val angle = 2.0 * Math.PI * i / (sampleRate.toDouble() / frequency)
+            val envelope = when {
+                i < 15 -> i / 15.0
+                i > numSamples - 15 -> (numSamples - i) / 15.0
+                else -> 1.0
+            }
+            buffer[i] = (sin(angle) * envelope * Short.MAX_VALUE * volume).toInt().toShort()
+        }
+        val audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(buffer.size * 2)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        audioTrack.write(buffer, 0, buffer.size)
+        audioTrack.play()
+    } catch (e: Exception) {}
+}
+
+fun getDirectionZone(azimuth: Float): String {
+    val normalized = (azimuth % 360 + 360) % 360
+    return when {
+        normalized >= 337.5f || normalized < 22.5f -> "N"
+        normalized >= 22.5f && normalized < 67.5f -> "NE"
+        normalized >= 67.5f && normalized < 112.5f -> "E"
+        normalized >= 112.5f && normalized < 157.5f -> "SE"
+        normalized >= 157.5f && normalized < 202.5f -> "S"
+        normalized >= 202.5f && normalized < 247.5f -> "SW"
+        normalized >= 247.5f && normalized < 292.5f -> "W"
+        else -> "NW"
+    }
+}
+
+@SuppressLint("MissingPermission")
+fun triggerVibration(vibrator: Vibrator?, vibrationEnabled: Boolean, isDouble: Boolean = false) {
+    if (!vibrationEnabled || vibrator == null) return
+    if (!vibrator.hasVibrator()) return
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val effect = if (isDouble) {
+                VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)
+            } else {
+                VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+            vibrator.vibrate(effect)
+        } else {
+            @Suppress("DEPRECATION")
+            if (isDouble) {
+                vibrator.vibrate(longArrayOf(0, 40, 60, 40), -1)
+            } else {
+                vibrator.vibrate(35)
+            }
+        }
+    } catch (e: Exception) {}
+}
+
+fun getCardinalDirection(azimuth: Float): String {
+    val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+    val i = ((azimuth + 22.5) / 45).toInt()
+    return dirs[if (i in 0..8) i else 0]
+}
+
+fun getFullDirectionName(azimuth: Float): String {
+    val cardinal = getCardinalDirection(azimuth)
+    return when (cardinal) {
+        "N" -> "North"
+        "NE" -> "Northeast"
+        "E" -> "East"
+        "SE" -> "Southeast"
+        "S" -> "South"
+        "SW" -> "Southwest"
+        "W" -> "West"
+        "NW" -> "Northwest"
+        else -> "North"
+    }
+}
+
+fun showOrUpdateCompassNotification(
+    context: Context,
+    azimuth: Float,
+    directionText: String,
+    fullDirectionName: String,
+    accuracyText: String,
+    soundEnabled: Boolean,
+    vibrationEnabled: Boolean,
+    isLocked: Boolean,
+    lockedAzimuth: Float
+) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+    }
+
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationChannel(
+            "compass_channel",
+            "Compass Navigation",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Live compass direction and accuracy information."
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        putExtra("navigate_to", "compass")
+    }
+    val pendingIntent = PendingIntent.getActivity(
+        context,
+        0,
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val dismissIntent = Intent("com.example.smartcityassistant.ACTION_DISMISS_COMPASS").apply {
+        setPackage(context.packageName)
+    }
+    val dismissPendingIntent = PendingIntent.getBroadcast(
+        context,
+        0,
+        dismissIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val contentText = if (isLocked) {
+        val diff = ((azimuth - lockedAzimuth + 540) % 360) - 180
+        if (abs(diff) <= 3f) {
+            "✓ Direction Fixed • ${azimuth.toInt()}° $directionText • $fullDirectionName"
+        } else {
+            "🔒 Locked: ${lockedAzimuth.toInt()}° ${getCardinalDirection(lockedAzimuth)} | Current: ${azimuth.toInt()}° $directionText"
+        }
+    } else {
+        "${azimuth.toInt()}° $directionText • $fullDirectionName"
+    }
+
+    val subText = "Accuracy: $accuracyText | 🔊 ${if (soundEnabled) "ON" else "OFF"} • 📳 ${if (vibrationEnabled) "ON" else "OFF"}"
+
+    val notification = NotificationCompat.Builder(context, "compass_channel")
+        .setSmallIcon(android.R.drawable.ic_menu_compass)
+        .setContentTitle("🧭 Smart Compass")
+        .setContentText(contentText)
+        .setStyle(NotificationCompat.BigTextStyle().bigText("$contentText\n$subText"))
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setOngoing(true)
+        .setContentIntent(pendingIntent)
+        .setDeleteIntent(dismissPendingIntent)
+        .setAutoCancel(false)
+        .build()
+
+    notificationManager.notify(1001, notification)
+}
+
+@Composable
+fun GeomagneticFieldDiagram(
+    azimuth: Float,
+    declination: Double,
+    inclination: Double,
+    directionText: String
+) {
+    val trueHeading = (azimuth + declination.toFloat() + 360f) % 360f
+    var selectedInfo by remember { mutableStateOf<String?>(null) }
+
+    if (selectedInfo != null) {
+        AlertDialog(
+            onDismissRequest = { selectedInfo = null },
+            title = {
+                Text(
+                    text = when (selectedInfo) {
+                        "true_north" -> "True North"
+                        "mag_north" -> "Magnetic North"
+                        "heading" -> "Your Heading"
+                        else -> ""
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryNavy
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (selectedInfo) {
+                        "true_north" -> {
+                            Text("True North is the direction toward Earth's geographic North Pole.", fontSize = 14.sp, color = MainText)
+                            Text("Use: It is the reference direction used for maps and geographic navigation.", fontSize = 14.sp, color = MainText)
+                            Text("Your Compass uses magnetic declination to convert magnetic heading into true heading.", fontSize = 14.sp, color = MainText)
+                        }
+                        "mag_north" -> {
+                            Text("Magnetic North is the direction indicated by Earth's magnetic field.", fontSize = 14.sp, color = MainText)
+                            Text("Use: A phone's magnetometer and traditional magnetic compasses use Earth's magnetic field to determine direction.", fontSize = 14.sp, color = MainText)
+                            Text("Magnetic North is different from True North. The difference is called magnetic declination.", fontSize = 14.sp, color = MainText)
+                            val decStr = String.format(Locale.getDefault(), "Current declination: %.1f° %s", abs(declination), if (declination >= 0) "E" else "W")
+                            Text(decStr, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                        }
+                        "heading" -> {
+                            Text("Your Heading shows the direction your phone is pointing right now.", fontSize = 14.sp, color = MainText)
+                            val headingStr = String.format(Locale.getDefault(), "Current heading: %d° %s", azimuth.toInt(), directionText)
+                            Text(headingStr, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                            Text("Turn your phone and this value changes live.", fontSize = 14.sp, color = MainText)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { selectedInfo = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNavy)
+                ) {
+                    Text("Got it", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .background(BackgroundGray, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(180.dp)) {
+                val cx = size.width / 2
+                val cy = size.height / 2
+                val radius = size.width / 2 - 20f
+
+                // Outer compass ring
+                drawCircle(color = Color.LightGray, radius = radius, style = Stroke(width = 1.5f))
+
+                // True North (Blue Arrow at 0° -> -90° canvas angle)
+                val tnRad = Math.toRadians(-90.0)
+                val tnEnd = Offset(cx + (radius - 18f) * cos(tnRad).toFloat(), cy + (radius - 18f) * sin(tnRad).toFloat())
+                drawArrow(Offset(cx, cy), tnEnd, Color(0xFF1E88E5), 2.5f)
+
+                // Magnetic North (Orange Arrow at declination -> -90 + declination)
+                val mnRad = Math.toRadians(-90.0 + declination)
+                val mnEnd = Offset(cx + (radius - 18f) * cos(mnRad).toFloat(), cy + (radius - 18f) * sin(mnRad).toFloat())
+                drawArrow(Offset(cx, cy), mnEnd, Color(0xFFFB8C00), 2.5f)
+
+                // User Heading (Red Arrow at trueHeading -> -90 + trueHeading)
+                val headingRad = Math.toRadians(-90.0 + trueHeading)
+                val headEnd = Offset(cx + radius * cos(headingRad).toFloat(), cy + radius * sin(headingRad).toFloat())
+                drawArrow(Offset(cx, cy), headEnd, ErrorRed, 3.5f)
+            }
+
+            // Center "YOU" marker
+            Surface(
+                color = PrimaryNavy,
+                shape = CircleShape,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("YOU", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Clickable Legend
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { selectedInfo = "true_north" }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.size(8.dp).background(Color(0xFF1E88E5), CircleShape))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("True North", fontSize = 11.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(Icons.Default.Info, contentDescription = "Info", tint = SecondaryText, modifier = Modifier.size(12.dp))
+            }
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { selectedInfo = "mag_north" }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.size(8.dp).background(Color(0xFFFB8C00), CircleShape))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Mag North", fontSize = 11.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(Icons.Default.Info, contentDescription = "Info", tint = SecondaryText, modifier = Modifier.size(12.dp))
+            }
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable { selectedInfo = "heading" }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(modifier = Modifier.size(8.dp).background(ErrorRed, CircleShape))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Your Heading", fontSize = 11.sp, color = SecondaryText, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(Icons.Default.Info, contentDescription = "Info", tint = SecondaryText, modifier = Modifier.size(12.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Tap any legend item above for simple explanations.\nCenter represents you. Red arrow rotates live with your phone.",
+            fontSize = 11.sp,
+            color = SecondaryText,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Magnetic Dip / Inclination Indicator Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = BackgroundGray),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Magnetic Dip (Inclination)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        String.format(Locale.getDefault(), "%.1f° %s", abs(inclination), if (inclination >= 0) "Down" else "Up"),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MainText
+                    )
+                }
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (inclination >= 0) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                            contentDescription = null,
+                            tint = PrimaryNavy,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun DrawScope.drawArrow(
+    start: Offset,
+    end: Offset,
+    color: Color,
+    strokeWidth: Float
+) {
+    drawLine(color = color, start = start, end = end, strokeWidth = strokeWidth)
+    val angle = atan2(end.y - start.y, end.x - start.x)
+    val arrowLength = 10f
+    val arrowAngle = Math.toRadians(30.0)
+    val p1x = end.x - arrowLength * cos(angle - arrowAngle).toFloat()
+    val p1y = end.y - arrowLength * sin(angle - arrowAngle).toFloat()
+    val p2x = end.x - arrowLength * cos(angle + arrowAngle).toFloat()
+    val p2y = end.y - arrowLength * sin(angle + arrowAngle).toFloat()
+    drawPath(
+        path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(end.x, end.y)
+            lineTo(p1x, p1y)
+            lineTo(p2x, p2y)
+            close()
+        },
+        color = color
+    )
 }

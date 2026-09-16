@@ -61,6 +61,7 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("androidx.security:security-crypto:1.1.0")
 
     // Firebase BoM & Services
     implementation(platform("com.google.firebase:firebase-bom:33.8.0"))

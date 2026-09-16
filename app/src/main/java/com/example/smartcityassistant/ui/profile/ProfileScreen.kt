@@ -50,6 +50,8 @@ private val AccentBlue = Color(0xFF1E88E5)
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     onBack: () -> Unit,
+    onNavigateToVerification: () -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -293,6 +295,12 @@ fun ProfileScreen(
                                     icon = Icons.Default.Info,
                                     onClick = { viewModel.setActiveDialog(ProfileDialogType.ABOUT) }
                                 )
+                                HorizontalDivider(color = DividerColor, modifier = Modifier.padding(vertical = 8.dp))
+                                ProfileNavigationRow(
+                                    label = "Verification",
+                                    icon = Icons.Default.VerifiedUser,
+                                    onClick = onNavigateToVerification
+                                )
                             }
                         }
                     }
@@ -387,7 +395,7 @@ fun ProfileScreen(
                             Button(
                                 onClick = {
                                     viewModel.setShowLogoutDialog(false)
-                                    onBack()
+                                    onLogout()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
                             ) {

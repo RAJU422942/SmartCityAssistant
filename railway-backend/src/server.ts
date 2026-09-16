@@ -9,6 +9,7 @@ import railwayRoutes from './routes/railwayRoutes';
 import cityAlertsRoutes from './routes/cityAlertsRoutes';
 import governmentRoutes from './routes/governmentRoutes';
 import aiRoutes from './routes/aiRoutes';
+import authRoutes from './routes/authRoutes';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/api/v1/alerts', cityAlertsRoutes);
 app.use('/api/v1/city-alerts', cityAlertsRoutes);
 app.use('/api/v1/government', governmentRoutes);
 app.use('/api/v1/ai', aiRoutes);
+app.use('/api/v1/auth', authRoutes);
 
 // Error Handler
 app.use(errorHandler);
