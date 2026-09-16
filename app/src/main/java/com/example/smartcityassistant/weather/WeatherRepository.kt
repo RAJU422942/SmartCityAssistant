@@ -52,7 +52,7 @@ class WeatherRepository(context: Context) {
 
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
-            Log.d(TAG, "Loaded cached weather with ${resp.forecast.size} forecast days")
+            Log.d(TAG, "Loaded cached weather with ${resp.forecast.size} forecast days and ${resp.hourly?.size ?: 0} hourly items")
 
             WeatherUiState.Success(
                 temperature = resp.temperature,
@@ -64,6 +64,7 @@ class WeatherRepository(context: Context) {
                 sunrise = resp.sunrise ?: "06:00 AM",
                 sunset = resp.sunset ?: "06:30 PM",
                 forecast = resp.forecast,
+                hourly = resp.hourly ?: emptyList(),
                 isCached = isExpired,
                 lastUpdatedText = updatedText
             )
@@ -82,7 +83,7 @@ class WeatherRepository(context: Context) {
                     putString(KEY_DATA, gson.toJson(cached))
                     putLong(KEY_TIMESTAMP, System.currentTimeMillis())
                 }
-                Log.d(TAG, "Saved weather cache with ${response.forecast?.size ?: 0} forecast days")
+                Log.d(TAG, "Saved weather cache with ${response.forecast?.size ?: 0} forecast days and ${response.hourly?.size ?: 0} hourly items")
             } else {
                 prefs.edit { clear() }
             }
@@ -94,7 +95,7 @@ class WeatherRepository(context: Context) {
     suspend fun fetchWeather(lat: Double, lon: Double): WeatherUiState {
         return try {
             val response = SecureBackendClient.service.getWeather(lat, lon)
-            Log.d(TAG, "Fetched weather response status: ${response.status}, forecast count: ${response.forecast?.size ?: 0}")
+            Log.d(TAG, "Fetched weather status: ${response.status}, forecast count: ${response.forecast?.size ?: 0}, hourly count: ${response.hourly?.size ?: 0}")
             if (response.status == "OK" && response.temperature != null) {
                 saveCache(response, lat, lon)
                 WeatherUiState.Success(
@@ -107,6 +108,7 @@ class WeatherRepository(context: Context) {
                     sunrise = response.sunrise ?: "06:00 AM",
                     sunset = response.sunset ?: "06:30 PM",
                     forecast = response.forecast ?: emptyList(),
+                    hourly = response.hourly ?: emptyList(),
                     isCached = false,
                     lastUpdatedText = "LIVE"
                 )

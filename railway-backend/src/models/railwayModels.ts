@@ -78,6 +78,17 @@ export interface ForecastDay {
   precipitationProbabilityMax: number | null;
 }
 
+export interface ForecastHour {
+  time: string;
+  hourFormatted: string;
+  temperature: number;
+  humidity: number;
+  precipitationProbability: number | null;
+  weatherCode: number;
+  windSpeed: number;
+  windDirection: number;
+}
+
 export interface BackendWeatherResponse {
   status: string;
   temperature: number | null;
@@ -90,6 +101,7 @@ export interface BackendWeatherResponse {
   sunset: string | null;
   source: string | null;
   forecast?: ForecastDay[];
+  hourly?: ForecastHour[];
   message?: string | null;
 }
 

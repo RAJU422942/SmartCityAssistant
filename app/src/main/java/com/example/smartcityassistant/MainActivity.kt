@@ -37,6 +37,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -286,6 +287,7 @@ fun MainNavigation() {
     val aqiState by sharedAqiViewModel.uiState.collectAsState()
     val sharedWeatherViewModel: WeatherViewModel = viewModel()
     val weatherState by sharedWeatherViewModel.uiState.collectAsState()
+    var selectedForecastDay by remember { mutableStateOf<ForecastDayDto?>(null) }
 
     // Transport Module States
     var baseTransportLocation by remember { mutableStateOf<TransportLocation?>(null) }
@@ -352,8 +354,32 @@ fun MainNavigation() {
                     WeatherDetailsScreen(
                         weatherState = weatherState,
                         onRetry = { sharedWeatherViewModel.retry() },
+                        onDayClick = { day ->
+                            selectedForecastDay = day
+                            currentScreen = "daily_weather_details"
+                        },
                         onBack = { currentScreen = "home" }
                     )
+                }
+                "daily_weather_details" -> {
+                    val successState = weatherState as? WeatherUiState.Success
+                    if (successState != null) {
+                        DailyWeatherDetailScreen(
+                            day = selectedForecastDay,
+                            weatherState = successState,
+                            onBack = { currentScreen = "weather_details" }
+                        )
+                    } else {
+                        WeatherDetailsScreen(
+                            weatherState = weatherState,
+                            onRetry = { sharedWeatherViewModel.retry() },
+                            onDayClick = { day ->
+                                selectedForecastDay = day
+                                currentScreen = "daily_weather_details"
+                            },
+                            onBack = { currentScreen = "home" }
+                        )
+                    }
                 }
                 "emergency" -> EmergencyCenterScreen { currentScreen = "home" }
                 "report" -> ReportProblemScreen(
@@ -724,6 +750,7 @@ fun AirQualitySummaryCard(
 fun WeatherDetailsScreen(
     weatherState: WeatherUiState,
     onRetry: () -> Unit,
+    onDayClick: (ForecastDayDto) -> Unit,
     onBack: () -> Unit
 ) {
     Column(
@@ -843,7 +870,9 @@ fun WeatherDetailsScreen(
                                 }
                             } else {
                                 weatherState.forecast.forEach { day ->
-                                    ForecastDayRow(day)
+                                    ForecastDayRow(day) {
+                                        onDayClick(day)
+                                    }
                                     Spacer(modifier = Modifier.height(10.dp))
                                 }
                             }
@@ -851,6 +880,142 @@ fun WeatherDetailsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DailyWeatherDetailScreen(
+    day: ForecastDayDto?,
+    weatherState: WeatherUiState.Success,
+    onBack: () -> Unit
+) {
+    if (day == null) {
+        Column(modifier = Modifier.fillMaxSize().background(BackgroundGray)) {
+            AqiTopAppBar(title = "Daily Forecast", onBack = onBack)
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No date selected", color = SecondaryText)
+            }
+        }
+        return
+    }
+
+    val matchingHours = weatherState.hourly.filter { it.time.startsWith(day.date) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundGray)
+    ) {
+        AqiTopAppBar(title = day.dayName, onBack = onBack)
+
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(day.dayName, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    WeatherIcon(weatherCode = day.weatherCode, modifier = Modifier.size(64.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "${day.maxTemp.toInt()}°C",
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryNavy
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = day.condition,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MainText
+                    )
+                    Text(
+                        text = "Min: ${day.minTemp.toInt()}°C",
+                        fontSize = 13.sp,
+                        color = SecondaryText
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Temperature Range", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    WeatherDetailRow("Maximum High", "${day.maxTemp.toInt()}°C", "🌡️")
+                    WeatherDetailRow("Minimum Low", "${day.minTemp.toInt()}°C", "🌡️")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Day Details", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    day.precipitationProbabilityMax?.let { rain ->
+                        WeatherDetailRow("Rain Probability", "${rain.toInt()}%", "🌧️")
+                    }
+                    WeatherDetailRow("Humidity", "${weatherState.humidity}%", "💧")
+                    WeatherDetailRow("Wind Speed", "${weatherState.windSpeed.toInt()} km/h", "💨")
+                    WeatherDetailRow("Sunrise", weatherState.sunrise, "🌅")
+                    WeatherDetailRow("Sunset", weatherState.sunset, "🌇")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Hourly Forecast (${day.dayName})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (matchingHours.isEmpty()) {
+                        Text("Hourly forecast unavailable for this date.", fontSize = 13.sp, color = SecondaryText)
+                    } else {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(matchingHours) { hour ->
+                                HourlyForecastCard(hour)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 }
@@ -874,10 +1039,38 @@ fun WeatherDetailRow(label: String, value: String, iconSymbol: String) {
 }
 
 @Composable
-fun ForecastDayRow(day: ForecastDayDto) {
+fun HourlyForecastCard(hour: ForecastHourDto) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, DividerColor),
+        modifier = Modifier.width(90.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(hour.hourFormatted, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MainText)
+            Spacer(modifier = Modifier.height(8.dp))
+            WeatherIcon(weatherCode = hour.weatherCode)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("${hour.temperature.toInt()}°C", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = PrimaryNavy)
+            Spacer(modifier = Modifier.height(4.dp))
+            hour.precipitationProbability?.let { rain ->
+                if (rain > 0) {
+                    Text("${rain.toInt()}% rain", fontSize = 10.sp, color = SecondaryBlue)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ForecastDayRow(day: ForecastDayDto, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onClick() }
             .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,

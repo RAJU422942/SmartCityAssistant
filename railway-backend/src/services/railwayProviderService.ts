@@ -414,7 +414,7 @@ export class RailwayProviderService {
     try {
       const userLat = parseFloat(lat);
       const userLon = parseFloat(lon);
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${userLat}&longitude=${userLon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`;
       const res = await this.fetchWithTimeout(url);
       if (!res.ok) {
         console.log(`[WEATHER ERROR] requestId=${requestId} httpStatus=${res.status}`);
@@ -423,6 +423,7 @@ export class RailwayProviderService {
       const data: any = await res.json();
       const current = data.current;
       const daily = data.daily;
+      const hourlyData = data.hourly;
 
       if (!current) {
         console.log(`[WEATHER ERROR] requestId=${requestId} no current weather data`);
@@ -482,7 +483,30 @@ export class RailwayProviderService {
         }
       }
 
-      console.log(`[WEATHER SUCCESS] requestId=${requestId} temp=${current.temperature_2m} code=${code} forecastDays=${forecast.length}`);
+      const hourlyList: any[] = [];
+      if (hourlyData && hourlyData.time) {
+        for (let j = 0; j < hourlyData.time.length; j++) {
+          const tIso = hourlyData.time[j];
+          let hourFormatted = tIso;
+          try {
+            const dt = new Date(tIso);
+            hourFormatted = dt.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+          } catch {}
+
+          hourlyList.push({
+            time: tIso,
+            hourFormatted,
+            temperature: hourlyData.temperature_2m[j],
+            humidity: hourlyData.relative_humidity_2m[j],
+            precipitationProbability: hourlyData.precipitation_probability?.[j] ?? null,
+            weatherCode: hourlyData.weather_code[j],
+            windSpeed: hourlyData.wind_speed_10m[j],
+            windDirection: hourlyData.wind_direction_10m[j]
+          });
+        }
+      }
+
+      console.log(`[WEATHER SUCCESS] requestId=${requestId} temp=${current.temperature_2m} forecastDays=${forecast.length} hourlyCount=${hourlyList.length}`);
 
       return {
         status: 'OK',
@@ -495,7 +519,8 @@ export class RailwayProviderService {
         sunrise: formatTime(sunriseIso),
         sunset: formatTime(sunsetIso),
         source: 'Open-Meteo',
-        forecast
+        forecast,
+        hourly: hourlyList
       };
     } catch (e: any) {
       console.log(`[WEATHER EXCEPTION] requestId=${requestId} error=${e.message}`);
