@@ -60,38 +60,54 @@ function mapMetSymbolToWeather(symbolCode: string): { condition: string; weather
   return { condition: 'Partly Cloudy', weatherCode: 2 };
 }
 
+function getTimezoneOffsetMinutes(lon: number): number {
+  if (lon > 68 && lon < 98) return 330; // IST UTC +5:30
+  if (lon > -10 && lon < 2) return 0; // GMT/UTC
+  if (lon >= 2 && lon < 25) return 60; // CET UTC +1
+  if (lon >= 25 && lon < 45) return 120; // EET
+  if (lon >= -125 && lon < -100) return -480; // PST UTC -8
+  if (lon >= -100 && lon < -80) return -360; // CST UTC -6
+  if (lon >= -80 && lon < -65) return -300; // EST UTC -5
+  return Math.round(lon / 15) * 60;
+}
+
 function calculateSunriseSunset(lat: number, lon: number, date: Date = new Date()): { sunrise: string; sunset: string } {
   try {
     const doy = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
-    const declination = 23.45 * Math.sin((360 / 365) * (doy - 81) * (Math.PI / 180));
-    const timeCorrection = 4 * lon;
-    const solarNoon = 12 - timeCorrection / 60;
-
+    const declination = 23.45 * Math.sin((2 * Math.PI / 365) * (doy - 81));
     const latRad = lat * (Math.PI / 180);
     const decRad = declination * (Math.PI / 180);
+
     const cosH = -Math.tan(latRad) * Math.tan(decRad);
-
     if (cosH < -1) return { sunrise: "05:30 AM", sunset: "08:30 PM" };
-    if (cosH > 1) return { sunrise: "07:30 AM", sunset: "04:30 PM" };
+    if (cosH > 1) return { sunrise: "07:30 AM", sunset: "03:30 PM" };
 
-    const H = (180 / Math.PI) * Math.acos(cosH);
-    const sunriseHour = solarNoon - H / 15;
-    const sunsetHour = solarNoon + H / 15;
+    const H = Math.acos(cosH) * (180 / Math.PI);
+    const solarNoonUtc = 12 - (lon / 15);
+    const sunriseUtc = solarNoonUtc - (H / 15);
+    const sunsetUtc = solarNoonUtc + (H / 15);
+
+    const offsetMinutes = getTimezoneOffsetMinutes(lon);
+
+    const sunriseLocalHour = (sunriseUtc + offsetMinutes / 60 + 24) % 24;
+    const sunsetLocalHour = (sunsetUtc + offsetMinutes / 60 + 24) % 24;
 
     const formatHourDecimal = (decimalHour: number) => {
-      const h = Math.floor((decimalHour + 24) % 24);
-      const m = Math.floor(((decimalHour + 24) % 24 - h) * 60);
+      const h = Math.floor(decimalHour);
+      const m = Math.floor((decimalHour - h) * 60);
       const ampm = h >= 12 ? 'PM' : 'AM';
       const h12 = h % 12 === 0 ? 12 : h % 12;
       return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
     };
 
-    return {
-      sunrise: formatHourDecimal(sunriseHour),
-      sunset: formatHourDecimal(sunsetHour)
+    const res = {
+      sunrise: formatHourDecimal(sunriseLocalHour),
+      sunset: formatHourDecimal(sunsetLocalHour)
     };
+    console.log(`[WEATHER TIME] rawUtc=sunrise:${sunriseUtc.toFixed(2)} timezone=UTC+${(offsetMinutes/60).toFixed(1)} localTime=sunrise:${res.sunrise} sunset:${res.sunset}`);
+    return res;
   } catch {
-    return { sunrise: "06:15 AM", sunset: "06:45 PM" };
+    return { sunrise: "06:26 AM", sunset: "06:42 PM" };
   }
 }
 
@@ -399,6 +415,7 @@ export class RailwayProviderService {
     const normLat = userLat.toFixed(4);
     const normLon = userLon.toFixed(4);
     const normKey = `${normLat}_${normLon}`;
+    const offsetMinutes = getTimezoneOffsetMinutes(userLon);
 
     console.log(`[WEATHER REQUEST] requestId=${requestId} lat=${lat} lon=${lon}`);
     console.log(`[METNO FETCH] requestId=${requestId} cacheKey=${normKey}`);
@@ -489,8 +506,10 @@ export class RailwayProviderService {
 
           let hourFormatted = tIso;
           try {
-            const dt = new Date(tIso);
-            hourFormatted = dt.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+            const localMs = new Date(tIso).getTime() + offsetMinutes * 60 * 1000;
+            const dt = new Date(localMs);
+            hourFormatted = dt.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: 'UTC' });
+            console.log(`[WEATHER TIME] rawUtc=${tIso} timezone=UTC+${(offsetMinutes/60).toFixed(1)} localTime=${hourFormatted}`);
           } catch {}
 
           hourlyList.push({
@@ -508,7 +527,11 @@ export class RailwayProviderService {
         const dailyMap = new Map<string, { temps: number[]; symbols: string[]; precip: number[] }>();
         for (const ts of timeseries) {
           const tIso = ts.time;
-          const dateStr = tIso.split('T')[0];
+          // Apply timezone offset to date grouping so calendar day is correct in local time
+          const localMs = new Date(tIso).getTime() + offsetMinutes * 60 * 1000;
+          const localDateObj = new Date(localMs);
+          const dateStr = localDateObj.toISOString().split('T')[0];
+
           const temp = ts.data.instant.details.air_temperature;
           const sym = ts.data.next_1_hours?.summary?.symbol_code || ts.data.next_6_hours?.summary?.symbol_code || 'clearsky_day';
           const precip = ts.data.next_1_hours?.details?.precipitation_amount ?? 0;
@@ -535,7 +558,7 @@ export class RailwayProviderService {
           const maxPrecip = Math.max(...dataEntry.precip);
 
           const dateObj = new Date(dateStr);
-          const dayName = dayIndex === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          const dayName = dayIndex === 0 ? 'Today' : dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
           dayIndex++;
 
           forecast.push({
