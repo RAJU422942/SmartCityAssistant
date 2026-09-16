@@ -1008,18 +1008,25 @@ fun DailyWeatherDetailScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Low", fontSize = 12.sp, color = SecondaryText)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("${day.minTemp.toInt()}°C", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.ArrowDownward, contentDescription = "Low", tint = Color(0xFF0288D1), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text("LOW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0288D1))
+                                Text("${day.minTemp.toInt()}°C", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF0288D1))
+                            }
                         }
                         VerticalDivider(modifier = Modifier.height(30.dp), color = DividerColor)
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("High", fontSize = 12.sp, color = SecondaryText)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("${day.maxTemp.toInt()}°C", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Default.ArrowUpward, contentDescription = "High", tint = Color(0xFFEF6C00), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text("HIGH", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00))
+                                Text("${day.maxTemp.toInt()}°C", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFFEF6C00))
+                            }
                         }
                     }
                 }
@@ -1065,45 +1072,47 @@ fun DailyWeatherDetailScreen(
                             ) {
                                 Column {
                                     Text(
-                                        text = "Selected Hour: ${hour.hourFormatted}",
+                                        text = "SELECTED HOUR · ${hour.hourFormatted}",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        color = PrimaryNavy
+                                        fontSize = 13.sp,
+                                        color = SecondaryText
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = getWeatherConditionText(hour.weatherCode),
-                                        fontSize = 12.sp,
-                                        color = SecondaryText
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MainText
                                     )
                                 }
                                 Text(
                                     text = "${hour.temperature.toInt()}°C",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 20.sp,
+                                    fontSize = 22.sp,
                                     color = PrimaryNavy
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column {
                                     Text("Humidity", fontSize = 11.sp, color = SecondaryText)
-                                    Text("${hour.humidity}%", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText)
-                                }
-                                Column {
-                                    Text("Wind Speed", fontSize = 11.sp, color = SecondaryText)
-                                    Text("${hour.windSpeed.toInt()} km/h", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText)
-                                }
-                                Column {
-                                    Text("Wind Direction", fontSize = 11.sp, color = SecondaryText)
-                                    Text(getWindDirectionText(hour.windDirection), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MainText)
+                                    Text("${hour.humidity}%", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF00ACC1))
                                 }
                                 Column {
                                     Text("Rain Prob", fontSize = 11.sp, color = SecondaryText)
-                                    Text("${hour.precipitationProbability?.toInt() ?: 0}%", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SecondaryBlue)
+                                    Text("${hour.precipitationProbability?.toInt() ?: 0}%", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1976D2))
+                                }
+                                Column {
+                                    Text("Wind Speed", fontSize = 11.sp, color = SecondaryText)
+                                    Text("${hour.windSpeed.toInt()} km/h", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF00897B))
+                                }
+                                Column {
+                                    Text("Direction", fontSize = 11.sp, color = SecondaryText)
+                                    Text(getWindDirectionText(hour.windDirection).take(4), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF3F51B5))
                                 }
                             }
                         }
@@ -1175,10 +1184,16 @@ fun TemperatureTrendGraph(hours: List<ForecastHourDto>) {
                         )
                     }
 
-                    points.forEach { pt ->
+                    points.forEachIndexed { index, pt ->
+                        val temp = temps[index]
+                        val ptColor = when {
+                            temp < (minT + range * 0.35f) -> Color(0xFF0288D1)
+                            temp > (minT + range * 0.65f) -> Color(0xFFEF6C00)
+                            else -> SecondaryBlue
+                        }
                         drawCircle(
-                            color = PrimaryNavy,
-                            radius = 4f,
+                            color = ptColor,
+                            radius = 5f,
                             center = pt
                         )
                     }
@@ -1217,11 +1232,16 @@ fun RainProbabilityChart(hours: List<ForecastHourDto>) {
             ) {
                 items(hours) { hour ->
                     val prob = hour.precipitationProbability ?: 0.0
+                    val barColor = when {
+                        prob >= 60 -> Color(0xFF0D47A1)
+                        prob >= 30 -> Color(0xFF1976D2)
+                        else -> Color(0xFF64B5F6)
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.width(36.dp)
                     ) {
-                        Text("${prob.toInt()}%", fontSize = 10.sp, color = SecondaryBlue, fontWeight = FontWeight.Bold)
+                        Text("${prob.toInt()}%", fontSize = 10.sp, color = barColor, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
                         Box(
                             modifier = Modifier
@@ -1234,7 +1254,7 @@ fun RainProbabilityChart(hours: List<ForecastHourDto>) {
                                 modifier = Modifier
                                     .width(8.dp)
                                     .height((50f * (prob / 100.0)).toFloat().coerceIn(2f, 50f).dp)
-                                    .background(SecondaryBlue, RoundedCornerShape(4.dp))
+                                    .background(barColor, RoundedCornerShape(4.dp))
                             )
                         }
                         Spacer(modifier = Modifier.height(6.dp))
@@ -1264,12 +1284,14 @@ fun DayDetailsGrid(day: ForecastDayDto, weatherState: WeatherUiState.Success) {
                         icon = Icons.Default.WaterDrop,
                         label = "Humidity",
                         value = "${weatherState.humidity}%",
+                        tint = Color(0xFF00ACC1),
                         modifier = Modifier.weight(1f)
                     )
                     InfoGridItem(
                         icon = Icons.Default.Air,
                         label = "Wind",
                         value = "${weatherState.windSpeed.toInt()} km/h",
+                        tint = Color(0xFF00897B),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1278,12 +1300,14 @@ fun DayDetailsGrid(day: ForecastDayDto, weatherState: WeatherUiState.Success) {
                         icon = Icons.Default.Grain,
                         label = "Rain Prob",
                         value = "${day.precipitationProbabilityMax?.toInt() ?: 0}%",
+                        tint = Color(0xFF1976D2),
                         modifier = Modifier.weight(1f)
                     )
                     InfoGridItem(
                         icon = Icons.Default.Explore,
                         label = "Direction",
                         value = getWindDirectionText(null).take(6),
+                        tint = Color(0xFF3F51B5),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1292,12 +1316,14 @@ fun DayDetailsGrid(day: ForecastDayDto, weatherState: WeatherUiState.Success) {
                         icon = Icons.Default.WbSunny,
                         label = "Sunrise",
                         value = weatherState.sunrise,
+                        tint = Color(0xFFFFA000),
                         modifier = Modifier.weight(1f)
                     )
                     InfoGridItem(
                         icon = Icons.Default.NightsStay,
                         label = "Sunset",
                         value = weatherState.sunset,
+                        tint = Color(0xFFE65100),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1307,14 +1333,14 @@ fun DayDetailsGrid(day: ForecastDayDto, weatherState: WeatherUiState.Success) {
 }
 
 @Composable
-fun InfoGridItem(icon: ImageVector, label: String, value: String, modifier: Modifier = Modifier) {
+fun InfoGridItem(icon: ImageVector, label: String, value: String, tint: Color = SecondaryBlue, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .background(Color(0xFFF8FAFC), RoundedCornerShape(12.dp))
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = SecondaryBlue, modifier = Modifier.size(24.dp))
+        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
         Spacer(modifier = Modifier.width(10.dp))
         Column {
             Text(label, fontSize = 11.sp, color = SecondaryText)
