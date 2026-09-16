@@ -40,7 +40,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun checkExistingSession() {
         val token = repository.getStoredToken()
         if (token != null) {
-            _uiState.value = AuthUiState.Authenticated(null)
+            viewModelScope.launch {
+                val user = repository.getMe()
+                if (user != null) {
+                    _currentUser.value = user
+                    _uiState.value = AuthUiState.Authenticated(user)
+                } else {
+                    _uiState.value = AuthUiState.Authenticated(null)
+                }
+            }
         } else {
             _uiState.value = AuthUiState.Idle
         }
@@ -94,8 +102,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.login(identifier, pass)
                 if (res.status == "SUCCESS") {
-                    _currentUser.value = res.user
-                    _uiState.value = AuthUiState.Authenticated(res.user)
+                    // Fetch latest /me to ensure accurate verification status from db
+                    val user = repository.getMe() ?: res.user
+                    _currentUser.value = user
+                    _uiState.value = AuthUiState.Authenticated(user)
                 } else {
                     _uiState.value = AuthUiState.Error(res.message ?: "Incorrect username, email, phone number or password.")
                 }
@@ -136,8 +146,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.register(fullName, username, email, phone, pass, confirmPass)
                 if (res.status == "SUCCESS") {
-                    _currentUser.value = res.user
-                    _uiState.value = AuthUiState.Authenticated(res.user)
+                    val user = repository.getMe() ?: res.user
+                    _currentUser.value = user
+                    _uiState.value = AuthUiState.Authenticated(user)
                 } else {
                     _uiState.value = AuthUiState.Error(res.message ?: "Registration failed.")
                 }
@@ -210,8 +221,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.verifyEmail(otp)
                 if (res.status == "SUCCESS") {
+                    // Refresh user state from DB via GET /me
+                    val user = repository.getMe()
+                    if (user != null) {
+                        _currentUser.value = user
+                    } else {
+                        _currentUser.value = _currentUser.value?.copy(emailVerified = true)
+                    }
                     _uiState.value = AuthUiState.SuccessMessage("Email verified successfully!")
-                    _currentUser.value = _currentUser.value?.copy(emailVerified = true)
                 } else {
                     _uiState.value = AuthUiState.Error(res.message ?: "Incorrect verification code.")
                 }
@@ -239,8 +256,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val res = repository.verifyPhone(otp)
                 if (res.status == "SUCCESS") {
+                    // Refresh user state from DB via GET /me
+                    val user = repository.getMe()
+                    if (user != null) {
+                        _currentUser.value = user
+                    } else {
+                        _currentUser.value = _currentUser.value?.copy(phoneVerified = true)
+                    }
                     _uiState.value = AuthUiState.SuccessMessage("Mobile number verified successfully!")
-                    _currentUser.value = _currentUser.value?.copy(phoneVerified = true)
                 } else {
                     _uiState.value = AuthUiState.Error(res.message ?: "Incorrect verification code.")
                 }

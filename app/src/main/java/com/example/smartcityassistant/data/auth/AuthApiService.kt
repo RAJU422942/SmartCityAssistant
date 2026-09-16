@@ -19,7 +19,7 @@ interface AuthApiService {
     suspend fun logout(): GenericApiResponse
 
     @GET("api/v1/auth/me")
-    suspend fun getMe(): Map<String, Any>
+    suspend fun getMe(): MeResponse
 
     @POST("api/v1/auth/forgot-password")
     suspend fun forgotPassword(@Body request: Map<String, String>): GenericApiResponse

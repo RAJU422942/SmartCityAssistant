@@ -7,6 +7,12 @@ data class AuthResponse(
     val user: UserDto?
 )
 
+data class MeResponse(
+    val status: String,
+    val message: String?,
+    val user: UserDto?
+)
+
 data class UserDto(
     val id: Long,
     val fullName: String,

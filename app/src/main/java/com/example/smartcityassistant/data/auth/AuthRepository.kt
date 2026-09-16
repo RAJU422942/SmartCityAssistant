@@ -52,6 +52,15 @@ class AuthRepository(context: Context) {
         return res
     }
 
+    suspend fun getMe(): UserDto? {
+        return try {
+            val res = api.getMe()
+            if (res.status == "SUCCESS") res.user else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun logout() {
         try {
             api.logout()
