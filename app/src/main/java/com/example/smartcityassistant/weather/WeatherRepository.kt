@@ -41,7 +41,8 @@ class WeatherRepository(context: Context) {
             val cached = gson.fromJson(json, CachedWeather::class.java)
             val resp = cached.response
 
-            if (resp.status != "OK" || resp.temperature == null || resp.forecast.isNullOrEmpty()) {
+            if (resp.status != "OK" || resp.temperature == null || resp.forecast.isNullOrEmpty() || resp.hourly.isNullOrEmpty()) {
+                Log.w(TAG, "Cached weather missing forecast or hourly data, clearing cache.")
                 prefs.edit { clear() }
                 return null
             }
@@ -52,7 +53,7 @@ class WeatherRepository(context: Context) {
 
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
-            Log.d(TAG, "Loaded cached weather with ${resp.forecast.size} forecast days and ${resp.hourly?.size ?: 0} hourly items")
+            Log.d(TAG, "Loaded cached weather: ${resp.forecast.size} forecast days, ${resp.hourly.size} hourly items")
 
             WeatherUiState.Success(
                 temperature = resp.temperature,
@@ -64,7 +65,7 @@ class WeatherRepository(context: Context) {
                 sunrise = resp.sunrise ?: "06:00 AM",
                 sunset = resp.sunset ?: "06:30 PM",
                 forecast = resp.forecast,
-                hourly = resp.hourly ?: emptyList(),
+                hourly = resp.hourly,
                 isCached = isExpired,
                 lastUpdatedText = updatedText
             )
@@ -83,7 +84,7 @@ class WeatherRepository(context: Context) {
                     putString(KEY_DATA, gson.toJson(cached))
                     putLong(KEY_TIMESTAMP, System.currentTimeMillis())
                 }
-                Log.d(TAG, "Saved weather cache with ${response.forecast?.size ?: 0} forecast days and ${response.hourly?.size ?: 0} hourly items")
+                Log.d(TAG, "Saved weather cache: ${response.forecast?.size ?: 0} forecast days, ${response.hourly?.size ?: 0} hourly items")
             } else {
                 prefs.edit { clear() }
             }
@@ -100,7 +101,7 @@ class WeatherRepository(context: Context) {
                 saveCache(response, lat, lon)
                 WeatherUiState.Success(
                     temperature = response.temperature,
-                    apparentTemperature = response.apparentTemperature ?: response.temperature,
+                    apparentTemperature = respValOr(response.apparentTemperature, response.temperature),
                     humidity = response.humidity ?: 50,
                     windSpeed = response.windSpeed ?: 10.0,
                     condition = response.condition ?: "Partly Cloudy",
@@ -129,4 +130,6 @@ class WeatherRepository(context: Context) {
             WeatherUiState.Error(e.localizedMessage ?: "Weather unavailable")
         }
     }
+
+    private fun respValOr(a: Double?, b: Double): Double = a ?: b
 }
