@@ -2,7 +2,6 @@ package com.example.smartcityassistant
 
 import com.example.smartcityassistant.railway.*
 import com.example.smartcityassistant.aqi.*
-import com.example.smartcityassistant.transport.*
 import com.example.smartcityassistant.weather.*
 import com.example.smartcityassistant.ui.profile.*
 import com.example.smartcityassistant.ui.explore.*
@@ -836,9 +835,17 @@ fun WeatherDetailsScreen(
                             Text("7-Day Forecast", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryNavy)
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            weatherState.forecast.forEach { day ->
-                                ForecastDayRow(day)
-                                Spacer(modifier = Modifier.height(10.dp))
+                            if (weatherState.forecast.isEmpty()) {
+                                Text("7-day forecast unavailable", fontSize = 13.sp, color = SecondaryText)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = SecondaryBlue)) {
+                                    Text("Retry")
+                                }
+                            } else {
+                                weatherState.forecast.forEach { day ->
+                                    ForecastDayRow(day)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                }
                             }
                         }
                     }

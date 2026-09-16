@@ -2,6 +2,7 @@ package com.example.smartcityassistant.weather
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
 import com.example.smartcityassistant.railway.SecureBackendClient
 import com.example.smartcityassistant.railway.WeatherResponseDto
@@ -16,6 +17,7 @@ class WeatherRepository(context: Context) {
     private val gson = Gson()
 
     companion object {
+        private const val TAG = "WeatherRepository"
         private const val KEY_DATA = "cached_weather_json"
         private const val KEY_TIMESTAMP = "cached_weather_timestamp"
         private const val CACHE_DURATION_MS = 30 * 60 * 1000L // 30 minutes
@@ -39,7 +41,7 @@ class WeatherRepository(context: Context) {
             val cached = gson.fromJson(json, CachedWeather::class.java)
             val resp = cached.response
 
-            if (resp.status != "OK" || resp.temperature == null) {
+            if (resp.status != "OK" || resp.temperature == null || resp.forecast.isNullOrEmpty()) {
                 prefs.edit { clear() }
                 return null
             }
@@ -50,6 +52,7 @@ class WeatherRepository(context: Context) {
 
             val minAgo = (ageMs / 60000).coerceAtLeast(1)
             val updatedText = if (isExpired) "CACHED • $minAgo min ago" else "LIVE • $minAgo min ago"
+            Log.d(TAG, "Loaded cached weather with ${resp.forecast.size} forecast days")
 
             WeatherUiState.Success(
                 temperature = resp.temperature,
@@ -60,11 +63,12 @@ class WeatherRepository(context: Context) {
                 weatherCode = resp.weatherCode ?: 2,
                 sunrise = resp.sunrise ?: "06:00 AM",
                 sunset = resp.sunset ?: "06:30 PM",
-                forecast = resp.forecast ?: emptyList(),
+                forecast = resp.forecast,
                 isCached = isExpired,
                 lastUpdatedText = updatedText
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing cached weather", e)
             prefs.edit { clear() }
             null
         }
@@ -78,15 +82,19 @@ class WeatherRepository(context: Context) {
                     putString(KEY_DATA, gson.toJson(cached))
                     putLong(KEY_TIMESTAMP, System.currentTimeMillis())
                 }
+                Log.d(TAG, "Saved weather cache with ${response.forecast?.size ?: 0} forecast days")
             } else {
                 prefs.edit { clear() }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving weather cache", e)
+        }
     }
 
     suspend fun fetchWeather(lat: Double, lon: Double): WeatherUiState {
         return try {
             val response = SecureBackendClient.service.getWeather(lat, lon)
+            Log.d(TAG, "Fetched weather response status: ${response.status}, forecast count: ${response.forecast?.size ?: 0}")
             if (response.status == "OK" && response.temperature != null) {
                 saveCache(response, lat, lon)
                 WeatherUiState.Success(
@@ -106,12 +114,16 @@ class WeatherRepository(context: Context) {
                 WeatherUiState.Error(response.message ?: "Weather unavailable")
             }
         } catch (e: SocketTimeoutException) {
+            Log.e(TAG, "Weather timeout", e)
             WeatherUiState.Error("Weather server is waking up — please retry.")
         } catch (e: HttpException) {
+            Log.e(TAG, "Weather HTTP error", e)
             WeatherUiState.Error("Server error (HTTP ${e.code()}).")
         } catch (e: IOException) {
+            Log.e(TAG, "Weather IO error", e)
             WeatherUiState.Error("Network error. Check connection.")
         } catch (e: Exception) {
+            Log.e(TAG, "Weather unknown error", e)
             WeatherUiState.Error(e.localizedMessage ?: "Weather unavailable")
         }
     }
