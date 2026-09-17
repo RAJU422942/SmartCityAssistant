@@ -141,6 +141,10 @@ This project is developed for educational and civic public-service purposes.
 <img width="355" height="727" alt="image" src="https://github.com/user-attachments/assets/bf111660-6cb0-4502-8054-2b27439eef9a" />
 <img width="358" height="732" alt="image" src="https://github.com/user-attachments/assets/20733e0b-4a1e-4d33-8da2-0d6628fb3dcc" />
 
+### my complaints
+<img width="356" height="737" alt="image" src="https://github.com/user-attachments/assets/c65e0120-cca7-4e90-98dd-a0758a36a486" />
+
+
 ### nearby service
 <img width="347" height="736" alt="image" src="https://github.com/user-attachments/assets/2d8f3a19-ed1f-417b-9942-ae354403066c" />
 <img width="358" height="747" alt="image" src="https://github.com/user-attachments/assets/be606ff1-94d2-488d-96da-d837def95e18" />
@@ -156,9 +160,6 @@ This project is developed for educational and civic public-service purposes.
 
 ### city Alerts
 <img width="353" height="731" alt="image" src="https://github.com/user-attachments/assets/f3e27523-55e8-4b1b-9d5e-b9ffd2448ede" />
-
-### my complaints
-<img width="356" height="737" alt="image" src="https://github.com/user-attachments/assets/c65e0120-cca7-4e90-98dd-a0758a36a486" />
 
 ### compas
 <img width="347" height="756" alt="image" src="https://github.com/user-attachments/assets/7d44eff4-5f13-4ab0-afd3-305af52cd1bf" />
