@@ -123,7 +123,7 @@ This project is developed for educational and civic public-service purposes.
 
 ## 📱 Project Screenshots
 ### Home Screen
-<img width="351" height="757" alt="image" src="https://github.com/user-attachments/assets/02496ce1-44d1-4c60-a4c3-0335234c7159" />
+<img width="352" height="747" alt="image" src="https://github.com/user-attachments/assets/22715cbb-df6f-4a00-9d84-db7b228a01f9" />
 <img width="347" height="748" alt="image" src="https://github.com/user-attachments/assets/b43065a3-5d6f-4547-9362-2fa22b133e0c" />
 
 
