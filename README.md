@@ -124,6 +124,8 @@ This project is developed for educational and civic public-service purposes.
 ## 📱 Project Screenshots
 ### Home Screen
 <img width="351" height="757" alt="image" src="https://github.com/user-attachments/assets/02496ce1-44d1-4c60-a4c3-0335234c7159" />
+<img width="347" height="748" alt="image" src="https://github.com/user-attachments/assets/b43065a3-5d6f-4547-9362-2fa22b133e0c" />
+
 
 ### Emergency Screen
 <img width="358" height="756" alt="image" src="https://github.com/user-attachments/assets/08a86ca8-573d-47ec-97fa-cb3a26f5f52a" />
