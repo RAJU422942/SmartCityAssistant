@@ -1,4 +1,4 @@
-<img width="353" height="750" alt="image" src="https://github.com/user-attachments/assets/93376d00-54ea-4276-bd67-dfca625d2f74" /># 🏙️ Smart City Assistant
+# 🏙️ Smart City Assistant
 
 A comprehensive, production-ready full-stack Android application and secure Node.js backend designed to empower citizens with civic services, emergency assistance, public transit tracking, government schemes, real-time city alerts, and secure account management.
 
@@ -176,6 +176,9 @@ This project is developed for educational and civic public-service purposes.
 <img width="358" height="737" alt="image" src="https://github.com/user-attachments/assets/45807c83-2845-4115-971d-f1ceeb8989c7" />
 <img width="352" height="753" alt="image" src="https://github.com/user-attachments/assets/f7411353-e148-4793-be9b-7b2c8456a4cd" />
 <img width="353" height="753" alt="image" src="https://github.com/user-attachments/assets/42dc6387-f92a-4536-8306-4ebae7fc88c0" />
+
+### Author
+Raju kumar sah
 
 
 
